@@ -1,4 +1,6 @@
 streamlit
 Pillow
 numpy
-easyocr
+requests
+pandas
+yfinance
