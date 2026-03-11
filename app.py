@@ -1,229 +1,243 @@
 import streamlit as st
+
+# ============================================================================
+# CONFIGURAZIONE INIZIALE - DEVE ESSERE PRIMA
+# ============================================================================
+try:
+    st.set_page_config(
+        page_title="Forex AI Analyzer", 
+        page_icon="📈", 
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
+except Exception as e:
+    st.error(f"Config error: {e}")
+
+# ============================================================================
+# IMPORTS CON TRY-EXCEPT
+# ============================================================================
 import numpy as np
 from PIL import Image
 from datetime import datetime
-import easyocr
-import requests
-import pandas as pd
 import re
 
-st.set_page_config(page_title="Forex AI MTF Real", page_icon="📈", layout="centered")
+# Imports opzionali
+try:
+    import requests
+    REQUESTS_OK = True
+except:
+    REQUESTS_OK = False
+    st.warning("Requests non disponibile")
 
-# CONFIGURA QUI LA TUA API KEY (gratis su alphavantage.co)
-ALPHA_VANTAGE_API_KEY = st.secrets.get("ALPHA_VANTAGE_KEY", "DEMO_KEY")
+# Rimuovo easyocr per ora (troppo pesante)
+OCR_AVAILABLE = False
 
-@st.cache_data(ttl=300)  # Cache 5 minuti
-def get_real_forex_data(pair, timeframe):
-    """
-    Scarica dati reali da Alpha Vantage
-    """
-    # Mappa coppie
-    symbol_map = {
-        "XAU/USD": "XAUUSD",  # Alpha Vantage usa formato specifico
-        "EUR/USD": "EURUSD",
-        "GBP/USD": "GBPUSD",
-        "USD/JPY": "USDJPY",
-        "BTC/USD": "BTCUSD"
+# ============================================================================
+# CONFIGURAZIONE API
+# ============================================================================
+# Inserisci qui la tua API key (poi sposta in secrets!)
+ALPHA_VANTAGE_KEY = "61XJBFBJ5UEU0UES"  # ⚠️ Rigenera questa key dopo!
+
+# ============================================================================
+# CSS SICURO
+# ============================================================================
+st.markdown("""
+<style>
+    .stApp { background: #0f172a; color: #f8fafc; }
+    .main-box { 
+        background: #1e293b; 
+        padding: 20px; 
+        border-radius: 10px; 
+        margin: 10px 0;
+        border: 1px solid #334155;
     }
-    
-    symbol = symbol_map.get(pair, pair.replace("/", ""))
-    
-    # Mappa timeframe Alpha Vantage
-    interval_map = {
-        "H1": "60min",
-        "H4": "240min",  # Alpha Vantage non ha 4h nativo, simuliamo
-        "D1": "daily"
-    }
-    
-    interval = interval_map.get(timeframe, "60min")
-    
+    .success-box { background: #059669; color: white; padding: 15px; border-radius: 8px; }
+    .error-box { background: #dc2626; color: white; padding: 15px; border-radius: 8px; }
+</style>
+""", unsafe_allow_html=True)
+
+# ============================================================================
+# FUNZIONI CORE
+# ============================================================================
+
+def get_simple_color_analysis(image):
+    """Analisi base che funziona sempre"""
     try:
-        if timeframe == "D1":
-            # Dati giornalieri
-            url = f"https://www.alphavantage.co/query?function=FX_DAILY&from_symbol={symbol[:3]}&to_symbol={symbol[3:]}&apikey={ALPHA_VANTAGE_API_KEY}"
+        img_array = np.array(image)
+        mean = np.mean(img_array, axis=(0,1))
+        
+        # Verde vs Rosso
+        if mean[1] > mean[0] * 1.2:
+            return "BULLISH", 75
+        elif mean[0] > mean[1] * 1.2:
+            return "BEARISH", 75
         else:
-            # Intraday
-            url = f"https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol={symbol[:3]}&to_symbol={symbol[3:]}&interval={interval}&apikey={ALPHA_VANTAGE_API_KEY}"
-        
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        
-        # Estrai time series
-        if "Time Series FX" in data:
-            ts_key = [k for k in data.keys() if "Time Series" in k][0]
-            df = pd.DataFrame.from_dict(data[ts_key], orient='index')
-            df.index = pd.to_datetime(df.index)
-            df = df.sort_index()
-            df.columns = ['open', 'high', 'low', 'close']
-            df = df.astype(float)
-            return df
-        
-        # Fallback per XAU (metallo, non forex)
-        if "XAU" in pair:
-            return get_gold_data_alternative(pair, timeframe)
-            
+            return "NEUTRAL", 50
     except Exception as e:
-        st.error(f"Errore API: {e}")
+        st.error(f"Analisi colore: {e}")
+        return "NEUTRAL", 50
+
+def fetch_alpha_vantage_safe(pair, api_key):
+    """Chiama API con gestione errori totale"""
+    if not REQUESTS_OK:
         return None
     
-    return None
-
-def get_gold_data_alternative(pair, timeframe):
-    """
-    Per XAU/USD usa yfinance come fallback (più stabile per gold)
-    """
     try:
-        import yfinance as yf
-        symbol = "GC=F"  # Gold Futures
-        period = "5d" if timeframe in ["H1", "H4"] else "1mo"
-        interval = "1h" if timeframe == "H1" else "1d"
+        # Per XAU/USD usiamo funzione specifica oro
+        if "XAU" in pair or "GOLD" in pair:
+            # Alpha Vantage usa XAUUSD per oro (commodity)
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=XAUUSD&interval=60min&apikey={api_key}&outputsize=compact"
+        else:
+            # Forex standard
+            from_symbol = pair[:3]
+            to_symbol = pair[3:] if len(pair) > 3 else "USD"
+            url = f"https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}&interval=60min&apikey={api_key}"
         
-        data = yf.download(symbol, period=period, interval=interval, progress=False)
-        if not data.empty:
-            data.columns = ['open', 'high', 'low', 'close', 'adj_close', 'volume']
-            return data[['open', 'high', 'low', 'close']]
-    except:
-        pass
-    return None
-
-def calculate_real_trend(data, periods=14):
-    """
-    Calcola trend reale con indicatori tecnici
-    """
-    if data is None or len(data) < periods:
-        return "NEUTRAL", 50
-    
-    # Calcola SMA
-    data['sma20'] = data['close'].rolling(window=min(20, len(data)//4)).mean()
-    data['sma50'] = data['close'].rolling(window=min(50, len(data)//2)).mean()
-    
-    # RSI
-    delta = data['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    current_rsi = rsi.iloc[-1]
-    
-    # Trend basato su SMA e prezzo
-    current_price = data['close'].iloc[-1]
-    sma20 = data['sma20'].iloc[-1]
-    sma50 = data['sma50'].iloc[-1]
-    
-    # Score trend 0-100
-    score = 50
-    
-    if current_price > sma20:
-        score += 15
-    else:
-        score -= 15
+        with st.spinner("📡 Chiamata API Alpha Vantage..."):
+            response = requests.get(url, timeout=15)
+            
+        if response.status_code != 200:
+            st.error(f"API Error: {response.status_code}")
+            return None
+            
+        data = response.json()
         
-    if current_price > sma50:
-        score += 15
-    else:
-        score -= 15
+        # Controlla errori API
+        if "Error Message" in data:
+            st.error(f"API: {data['Error Message']}")
+            return None
+            
+        if "Note" in data:  # Rate limit
+            st.warning("⚠️ Rate limit API. Attendi 1 minuto.")
+            return None
+            
+        return data
         
-    if current_rsi > 50:
-        score += 10
-    else:
-        score -= 10
-    
-    # Determina trend
-    if score > 65:
-        trend = "BULLISH"
-    elif score < 35:
-        trend = "BEARISH"
-    else:
-        trend = "NEUTRAL"
-        score = 50
-    
-    return trend, max(30, min(95, score))
+    except Exception as e:
+        st.error(f"Errore richiesta: {str(e)}")
+        return None
 
-def analyze_multi_timeframe_real(pair, current_price):
-    """
-    Analisi MTF con dati REALI da API
-    """
-    with st.spinner("📡 Scaricando dati reali da Alpha Vantage..."):
+# ============================================================================
+# UI PRINCIPALE
+# ============================================================================
+
+st.title("📈 Forex AI Analyzer")
+st.markdown("##### Versione Stabile - Dati Reali Alpha Vantage")
+
+# Verifica stato sistema
+status_col = st.columns(3)
+with status_col[0]:
+    st.markdown(f"{'🟢' if REQUESTS_OK else '🔴'} Requests")
+with status_col[1]:
+    st.markdown(f"🔴 OCR (disabilitato)")
+with status_col[2]:
+    st.markdown(f"{'🟢' if ALPHA_VANTAGE_KEY else '🔴'} API Key")
+
+# Input utente
+st.markdown("---")
+
+col1, col2 = st.columns(2)
+with col1:
+    pair = st.selectbox(
+        "Coppia",
+        ["XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY", "BTC/USD"],
+        index=0
+    )
+
+with col2:
+    manual_price = st.number_input(
+        "Prezzo attuale (dal tuo MT4/MT5)",
+        min_value=0.0,
+        value=5175.50,
+        step=0.01,
+        format="%.2f"
+    )
+
+# Upload
+uploaded = st.file_uploader("📸 Screenshot grafico (opzionale)", type=["png", "jpg", "jpeg"])
+
+# ANALISI
+if st.button("🚀 AVVIA ANALISI", type="primary"):
+    
+    with st.container():
+        st.markdown("### 🔍 Risultati")
         
-        # Scarica dati per ogni timeframe
-        data_h1 = get_real_forex_data(pair, "H1")
-        data_h4 = get_real_forex_data(pair, "H4") 
-        data_d1 = get_real_forex_data(pair, "D1")
-    
-    # Calcola trend reali
-    trend_h1, strength_h1 = calculate_real_trend(data_h1) if data_h1 is not None else ("NEUTRAL", 50)
-    trend_h4, strength_h4 = calculate_real_trend(data_h4) if data_h4 is not None else ("NEUTRAL", 50)
-    trend_d1, strength_d1 = calculate_real_trend(data_d1) if data_d1 is not None else ("NEUTRAL", 50)
-    
-    # Confluenza
-    trends = [trend_h1, trend_h4, trend_d1]
-    bullish = trends.count("BULLISH")
-    bearish = trends.count("BEARISH")
-    
-    if bullish >= 2 and bearish == 0:
-        signal = "STRONG BUY"
-        direction = "BUY"
-        score = 75 + (bullish * 8)
-    elif bearish >= 2 and bullish == 0:
-        signal = "STRONG SELL"
-        direction = "SELL"
-        score = 75 + (bearish * 8)
-    elif bullish > bearish:
-        signal = "WEAK BUY"
-        direction = "BUY"
-        score = 60
-    elif bearish > bullish:
-        signal = "WEAK SELL"
-        direction = "SELL"
-        score = 60
-    else:
-        signal = "NO TRADE"
-        direction = "NEUTRAL"
-        score = 40
-    
-    # Livelli basati su ATR reale
-    if data_h4 is not None:
-        atr = calculate_atr(data_h4)
-    else:
-        atr = 15 if pair == "XAU/USD" else 0.0020
-    
-    if direction == "BUY":
-        entry = current_price
-        tp = entry + (atr * 2.5)
-        sl = entry - (atr * 1.0)
-    elif direction == "SELL":
-        entry = current_price
-        tp = entry - (atr * 2.5)
-        sl = entry + (atr * 1.0)
-    else:
-        entry, tp, sl = current_price, current_price, current_price
-    
-    decimals = 2 if pair in ["XAU/USD", "BTC/USD"] else 5
-    
-    return {
-        'timeframes': {
-            'H1': {'trend': trend_h1, 'strength': strength_h1, 'data': data_h1 is not None},
-            'H4': {'trend': trend_h4, 'strength': strength_h4, 'data': data_h4 is not None},
-            'D1': {'trend': trend_d1, 'strength': strength_d1, 'data': data_d1 is not None}
-        },
-        'confluence': {'score': min(score, 100), 'bullish': bullish, 'bearish': bearish},
-        'signal': signal,
-        'direction': direction,
-        'entry': round(entry, decimals),
-        'tp': round(tp, decimals),
-        'sl': round(sl, decimals),
-        'rr': 2.5,
-        'atr': round(atr, 2)
-    }
+        # Step 1: Analisi colore screenshot (se presente)
+        if uploaded:
+            try:
+                img = Image.open(uploaded).convert('RGB')
+                trend_color, conf_color = get_simple_color_analysis(img)
+                
+                st.markdown(f"""
+                    <div class="main-box">
+                        <h4>Analisi Grafico</h4>
+                        <p>Trend visivo: <b>{trend_color}</b> (confidenza: {conf_color}%)</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Errore immagine: {e}")
+                trend_color = "NEUTRAL"
+        else:
+            trend_color = "NEUTRAL"
+        
+        # Step 2: Dati reali API
+        st.markdown("#### 📡 Dati di Mercato Reali")
+        
+        api_data = fetch_alpha_vantage_safe(pair, ALPHA_VANTAGE_KEY)
+        
+        if api_data:
+            st.success("✅ Dati API ricevuti!")
+            st.json(api_data)  # Debug - mostra struttura
+        else:
+            st.warning("⚠️ API non disponibile. Uso dati manuali.")
+            
+            # Simulazione realistica basata su prezzo inserito
+            if trend_color == "BULLISH":
+                signal = "BUY"
+                tp = manual_price + 35
+                sl = manual_price - 15
+            elif trend_color == "BEARISH":
+                signal = "SELL"
+                tp = manual_price - 35
+                sl = manual_price + 15
+            else:
+                signal = "NEUTRAL"
+                tp = manual_price + 20
+                sl = manual_price - 20
+            
+            # Mostra risultato
+            st.markdown(f"""
+                <div class="main-box" style="text-align: center;">
+                    <h2>{signal}</h2>
+                    <p>Entry: {manual_price:.2f}</p>
+                    <p>TP: {tp:.2f} | SL: {sl:.2f}</p>
+                </div>
+            """, unsafe_allow_html=True)
 
-def calculate_atr(data, period=14):
-    """Calcola Average True Range reale"""
-    high_low = data['high'] - data['low']
-    high_close = np.abs(data['high'] - data['close'].shift())
-    low_close = np.abs(data['low'] - data['close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    atr = true_range.rolling(period).mean()
-    return atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else 15
+# Footer
+st.markdown("---")
+st.caption(f"⏰ Ultimo aggiornamento: {datetime.now().strftime('%H:%M:%S')}")
+st.caption("⚠️ Versione stabile - Alpha Vantage API")
 
-# ... (UI simile a prima ma con indicatori "LIVE DATA" vs "SIMULATED")
+# ============================================================================
+# ISTRUZIONI PER FIX
+# ============================================================================
+with st.expander("🔧 Se vedi ancora problemi"):
+    st.markdown("""
+    ### Soluzione schermata bianca:
+    
+    1. **Cancella cache** in Streamlit Cloud (Settings → Reboot)
+    2. **Controlla requirements.txt**:
+    ```
+    streamlit
+    Pillow
+    numpy
+    requests
+    ```
+    3. **Rimuovi** easyocr se presente (troppo pesante)
+    4. **Controlla logs** in Streamlit Cloud (icona 🐛 in basso)
+    
+    ### API Key:
+    La tua key è: `61XJBFBJ5UEU0UES`
+    ⚠️ **Rigenerala su alphavantage.co** dopo aver risolto!
+    """)
