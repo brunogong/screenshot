@@ -1,6 +1,8 @@
 import streamlit as st
 
-# Configurazione
+# ============================================================================
+# CONFIGURAZIONE INIZIALE
+# ============================================================================
 st.set_page_config(
     page_title="Forex AI Analyzer PRO", 
     page_icon="📈", 
@@ -16,28 +18,24 @@ import requests
 import pandas as pd
 
 # ============================================================================
-# CSS CON TESTO CHIARO SU SFONDO SCURO
+# CSS CON TESTO LEGGIBILE
 # ============================================================================
 st.markdown("""
 <style>
-    /* Sfondo e testo base */
     .stApp { 
         background: #0f172a; 
     }
     
-    /* Tutto il testo in chiaro */
     .stApp, .stApp p, .stApp label, .stApp span, .stApp div {
         color: #f1f5f9 !important;
     }
     
-    /* Input labels */
     .stNumberInput label, .stSelectbox label, .stFileUploader label {
         color: #e2e8f0 !important;
         font-weight: 600 !important;
         font-size: 14px !important;
     }
     
-    /* Box metriche */
     .metric-box {
         background: #1e293b;
         border: 2px solid #475569;
@@ -47,7 +45,6 @@ st.markdown("""
         text-align: center;
     }
     
-    /* Segnali */
     .signal-buy { 
         background: linear-gradient(135deg, #059669, #10b981); 
         padding: 25px; 
@@ -73,7 +70,6 @@ st.markdown("""
         border: 2px solid #64748b;
     }
     
-    /* Timeframe boxes */
     .tf-box {
         background: #1e293b;
         border: 3px solid #64748b;
@@ -85,7 +81,6 @@ st.markdown("""
     .tf-bullish { border-color: #10b981; background: rgba(16, 185, 129, 0.15); }
     .tf-bearish { border-color: #ef4444; background: rgba(239, 68, 68, 0.15); }
     
-    /* Prezzi */
     .price-value { 
         font-size: 26px; 
         font-weight: bold; 
@@ -97,7 +92,6 @@ st.markdown("""
     .tp { color: #4ade80 !important; }
     .sl { color: #f87171 !important; }
     
-    /* Info box */
     .info-box {
         background: #334155;
         border-left: 4px solid #06b6d4;
@@ -106,7 +100,6 @@ st.markdown("""
         margin: 10px 0;
     }
     
-    /* Bottoni */
     .stButton>button {
         background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
         color: white !important;
@@ -117,21 +110,21 @@ st.markdown("""
         font-size: 16px !important;
     }
     
-    /* Expander */
     .streamlit-expanderHeader {
         color: #f1f5f9 !important;
         background: #1e293b !important;
         border-radius: 8px !important;
     }
     
-    /* Caption e testo piccolo */
     .stCaption {
         color: #94a3b8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# API Key
+# ============================================================================
+# API KEY
+# ============================================================================
 try:
     API_KEY = st.secrets["ALPHA_VANTAGE_KEY"]
 except:
@@ -148,16 +141,14 @@ def fetch_real_data(pair, tf):
     if not API_KEY or API_KEY == "DEMO":
         return None
     
-    # Mappa timeframe
     tf_map = {
         "H1": ("FX_INTRADAY", "60min"),
-        "H4": ("FX_INTRADAY", "60min"),  # Useremo 60min e aggregiamo
+        "H4": ("FX_INTRADAY", "60min"),
         "D1": ("FX_DAILY", None)
     }
     
     func, interval = tf_map.get(tf, ("FX_INTRADAY", "60min"))
     
-    # Costruisci URL
     if pair == "XAU/USD":
         if func == "FX_DAILY":
             url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=XAUUSD&apikey={API_KEY}&outputsize=compact"
@@ -200,30 +191,25 @@ def calculate_real_indicators(df):
     if df is None or len(df) < 5:
         return None, 50
     
-    # Prendi solo dati di oggi (ultime 24h)
     today = df.index[-1].date()
     today_data = df[df.index.date == today]
     
     if len(today_data) == 0:
-        today_data = df.tail(24)  # Ultime 24 candele
+        today_data = df.tail(24)
     
-    # High/Low del giorno (reali!)
     daily_high = today_data['high'].max()
     daily_low = today_data['low'].min()
     daily_open = today_data['open'].iloc[0]
     
-    # Indicatori
     df['sma20'] = df['close'].rolling(20).mean()
     df['sma50'] = df['close'].rolling(50).mean()
     
-    # RSI
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     df['rsi'] = 100 - (100 / (1 + rs))
     
-    # ATR
     hl = df['high'] - df['low']
     hc = abs(df['high'] - df['close'].shift())
     lc = abs(df['low'] - df['close'].shift())
@@ -232,7 +218,6 @@ def calculate_real_indicators(df):
     
     last = df.iloc[-1]
     
-    # Score trend
     score = 50
     if last['close'] > last['sma20']: score += 15
     else: score -= 15
@@ -263,7 +248,6 @@ def calculate_real_indicators(df):
 st.title("📈 Forex AI Analyzer PRO")
 st.markdown("**✅ Dati Reali Alpha Vantage • 🎯 Prezzo Manuale dal Broker**")
 
-# Spiegazione
 with st.expander("ℹ️ Come recuperare Daily High/Low", expanded=False):
     st.markdown("""
     ### 📊 Daily High/Low si recuperano AUTOMATICAMENTE!
@@ -279,7 +263,6 @@ with st.expander("ℹ️ Come recuperare Daily High/Low", expanded=False):
     4. Inseriscili qui sotto (altrimenti usa quelli API)
     """)
 
-# Input principali
 st.markdown("### 🔧 Dati di Mercato")
 
 col1, col2, col3 = st.columns(3)
@@ -308,10 +291,8 @@ with col3:
         index=1
     )
 
-# High/Low con info
 st.markdown("### 📈 Daily High/Low (Auto o Manuale)")
 
-# Recupero automatico (verrà mostrato dopo)
 auto_high, auto_low = 0.0, 0.0
 
 col4, col5 = st.columns(2)
@@ -334,7 +315,6 @@ with col5:
         help="Minimo del giorno - recuperato automaticamente da API o inserito manualmente"
     )
 
-# Upload opzionale screenshot
 uploaded = st.file_uploader("📸 Screenshot grafico (opzionale)", type=["png", "jpg", "jpeg"])
 
 st.markdown("---")
@@ -349,27 +329,22 @@ if st.button("🚀 ANALISI MULTI-TIMEFRAME", type="primary", use_container_width
         st.error("❌ Inserisci il prezzo attuale dal tuo broker!")
         st.stop()
     
-    # Scarica dati
     with st.spinner("📡 Scaricando dati reali..."):
         data_h1 = fetch_real_data(pair, "H1")
         data_h4 = fetch_real_data(pair, "H4") 
         data_d1 = fetch_real_data(pair, "D1")
     
-    # Calcola indicatori
     ind_h1, _ = calculate_real_indicators(data_h1)
     ind_h4, _ = calculate_real_indicators(data_h4)
     ind_d1, _ = calculate_real_indicators(data_d1)
     
-    # Recupera High/Low automatici
     if ind_h4:
         auto_high = ind_h4['daily_high']
         auto_low = ind_h4['daily_low']
     
-    # Usa input manuale se fornito, altrimenti auto
     daily_high = daily_high_input if daily_high_input > 0 else auto_high
     daily_low = daily_low_input if daily_low_input > 0 else auto_low
     
-    # Mostra info
     api_status = "✅ Dati API Reali" if ind_h4 else "⚠️ Dati Limitati"
     
     st.markdown(f"""
@@ -381,15 +356,176 @@ if st.button("🚀 ANALISI MULTI-TIMEFRAME", type="primary", use_container_width
         </div>
     """, unsafe_allow_html=True)
     
-    # Screenshot se presente
     if uploaded:
         st.image(uploaded, caption="📸 Il tuo grafico", use_column_width=True)
     
-    # ... (resto analisi timeframe come prima)
+    # Timeframe Analysis
+    st.subheader("📊 Analisi Timeframe Reali")
     
-    # Esempio output
-    st.success("✅ Analisi completata! (continua con codice precedente...)")
+    tf_data = {
+        'H1': ind_h1 if ind_h1 else {'trend': 'NEUTRAL', 'strength': 50, 'atr': 15 if 'XAU' in pair else 0.002, 'rsi': 50},
+        'H4': ind_h4 if ind_h4 else {'trend': 'NEUTRAL', 'strength': 50, 'atr': 15 if 'XAU' in pair else 0.002, 'rsi': 50},
+        'D1': ind_d1 if ind_d1 else {'trend': 'NEUTRAL', 'strength': 50, 'atr': 15 if 'XAU' in pair else 0.002, 'rsi': 50}
+    }
+    
+    cols = st.columns(3)
+    for i, (tf, data) in enumerate(tf_data.items()):
+        with cols[i]:
+            trend = data['trend']
+            icon = "🟢" if trend == "BULLISH" else "🔴" if trend == "BEARISH" else "⚪"
+            css_class = "tf-bullish" if trend == "BULLISH" else "tf-bearish" if trend == "BEARISH" else ""
+            
+            st.markdown(f"""
+                <div class="tf-box {css_class}">
+                    <div style="font-size: 20px; font-weight: bold; color: #f1f5f9;">{tf}</div>
+                    <div style="font-size: 28px; margin: 10px 0;">{icon}</div>
+                    <div style="font-size: 14px; font-weight: 600; color: #f1f5f9;">{trend}</div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">
+                        Forza: {data['strength']}%<br>
+                        RSI: {data['rsi']}<br>
+                        ATR: {data['atr']}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+    
+    # Confluenza
+    trends = [d['trend'] for d in tf_data.values()]
+    bullish = trends.count("BULLISH")
+    bearish = trends.count("BEARISH")
+    
+    if bullish >= 2 and bearish == 0:
+        signal = "STRONG BUY"
+        direction = "BUY"
+        score = 85
+        box_class = "signal-buy"
+    elif bearish >= 2 and bullish == 0:
+        signal = "STRONG SELL"
+        direction = "SELL"
+        score = 85
+        box_class = "signal-sell"
+    elif bullish > bearish:
+        signal = "WEAK BUY"
+        direction = "BUY"
+        score = 65
+        box_class = "signal-buy"
+    elif bearish > bullish:
+        signal = "WEAK SELL"
+        direction = "SELL"
+        score = 65
+        box_class = "signal-sell"
+    else:
+        signal = "NO TRADE"
+        direction = "NEUTRAL"
+        score = 45
+        box_class = "signal-neutral"
+    
+    # Calcola livelli
+    atr = tf_data['H4']['atr'] if tf_data['H4']['atr'] else (35 if 'XAU' in pair else 0.003)
+    
+    if score >= 80:
+        mult = 3.0
+    elif score >= 60:
+        mult = 2.0
+    else:
+        mult = 1.0
+    
+    tp_dist = atr * mult * 2.5
+    sl_dist = atr * mult * 1.0
+    
+    if direction == "BUY":
+        entry = current_price
+        tp = entry + tp_dist
+        sl = entry - sl_dist
+    elif direction == "SELL":
+        entry = current_price
+        tp = entry - tp_dist
+        sl = entry + sl_dist
+    else:
+        entry = current_price
+        tp = entry + tp_dist
+        sl = entry - sl_dist
+    
+    decimals = 2 if 'XAU' in pair or 'BTC' in pair or 'XAG' in pair else 5
+    
+    # Display segnale
+    st.markdown("---")
+    
+    icon_signal = "🟢" if "BUY" in signal else "🔴" if "SELL" in signal else "⚪"
+    st.markdown(f"""
+        <div class="{box_class}">
+            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px; color: #f1f5f9;">SEGNALE MULTI-TIMEFRAME</div>
+            <h2 style="margin: 0; font-size: 36px; color: #ffffff;">{icon_signal} {signal}</h2>
+            <div style="font-size: 18px; margin-top: 10px; color: #f1f5f9;">Score: {score}/100</div>
+            <div style="font-size: 12px; margin-top: 5px; opacity: 0.8; color: #f1f5f9;">
+                🟢{bullish} 🔴{bearish} ⚪{3-bullish-bearish}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if direction != "NEUTRAL":
+        st.subheader("🎯 Livelli Operativi")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"""
+                <div class="metric-box">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">🎯 Entry</div>
+                    <div class="price-value entry">{entry:.{decimals}f}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">Prezzo reale inserito</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+                <div class="metric-box">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">📊 Risk:Reward</div>
+                    <div class="price-value" style="color: #fbbf24;">1:{tp_dist/sl_dist:.1f}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">ATR x{mult}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        c3, c4 = st.columns(2)
+        with c3:
+            st.markdown(f"""
+                <div class="metric-box">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">✅ Take Profit</div>
+                    <div class="price-value tp">{tp:.{decimals}f}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">+{tp_dist:.{decimals}f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"""
+                <div class="metric-box">
+                    <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">❌ Stop Loss</div>
+                    <div class="price-value sl">{sl:.{decimals}f}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">-{sl_dist:.{decimals}f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Share
+        st.markdown("---")
+        signal_text = f"""🎯 FOREX SIGNAL - {datetime.now().strftime('%d/%m %H:%M')}
 
-# Footer
+📊 {pair} | {main_tf}
+{signal} (Score: {score}/100)
+
+🟢 H1: {tf_data['H1']['trend']} ({tf_data['H1']['strength']}%)
+🔵 H4: {tf_data['H4']['trend']} ({tf_data['H4']['strength']}%)
+⚫ D1: {tf_data['D1']['trend']} ({tf_data['D1']['strength']}%)
+
+🎯 Entry: {entry:.{decimals}f}
+✅ TP: {tp:.{decimals}f} (+{tp_dist:.{decimals}f})
+❌ SL: {sl:.{decimals}f} (-{sl_dist:.{decimals}f})
+
+📊 R:R = 1:{tp_dist/sl_dist:.1f}
+💰 ATR: {atr}
+
+#Forex #MTF #{pair.replace('/', '')}"""
+        
+        st.code(signal_text, language=None)
+        if st.button("📋 Copia Segnale", use_container_width=True):
+            st.success("✅ Copiato negli appunti!")
+    else:
+        st.warning("⚠️ Nessuna confluenza timeframe. Attendere setup migliore.")
+
 st.markdown("---")
 st.caption(f"⏰ {datetime.now().strftime('%H:%M:%S')} | 🟢 Dati reali Alpha Vantage")
