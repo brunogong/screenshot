@@ -27,6 +27,13 @@ st.markdown("""
     .tp { color: #4ade80 !important; }
     .sl { color: #f87171 !important; }
     .info-box { background: #1e3a5f; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 0 8px 8px 0; margin: 10px 0; }
+    /* Stili per i livelli di trading */
+    .level-box { background: #1e293b; border: 2px solid #475569; border-radius: 12px; padding: 15px; text-align: center; margin: 5px 0; }
+    .level-entry { border-color: #06b6d4; background: rgba(6, 182, 212, 0.1); }
+    .level-tp { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+    .level-sl { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+    .level-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; margin-bottom: 5px; }
+    .level-value { font-size: 20px; font-weight: bold; font-family: monospace; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,38 +84,26 @@ def fetch_data(pair):
             return None
             
         # FIX: Gestione robusta delle colonne
-        # yfinance può restituire MultiIndex o colonne singole
         if isinstance(data.columns, pd.MultiIndex):
-            # Se è MultiIndex, prendi il primo livello
             data.columns = data.columns.get_level_values(0)
         
-        # Rinomina le colonne in lowercase per sicurezza
         data = data.rename(columns=str.lower)
         
-        # Mappa standard delle colonne yfinance
         column_mapping = {
             'open': 'open',
             'high': 'high', 
             'low': 'low',
             'close': 'close',
-            'adj close': 'close',  # usa adj close come close se presente
+            'adj close': 'close',
             'adj_close': 'close',
             'volume': 'volume'
         }
         
-        # Seleziona solo le colonne necessarie
-        available_cols = {}
-        for std_name, target in column_mapping.items():
-            if std_name in data.columns:
-                available_cols[std_name] = target
-        
-        # Rimuovi duplicati mantenendo solo open, high, low, close
         cols_to_use = ['open', 'high', 'low', 'close']
         result = pd.DataFrame()
         
         for col in cols_to_use:
-            # Trova la prima colonna che corrisponde
-            for orig, mapped in available_cols.items():
+            for orig, mapped in column_mapping.items():
                 if mapped == col and orig in data.columns:
                     result[col] = data[orig]
                     break
@@ -126,7 +121,6 @@ def calculate_indicators(df):
     if df is None or len(df) < 20:
         return None
     
-    # Assicurati che i dati siano float
     for col in ['open', 'high', 'low', 'close']:
         df[col] = pd.to_numeric(df[col], errors='coerce')
     
@@ -171,7 +165,6 @@ def find_levels(df):
     if df is None or len(df) < 20:
         return None
     
-    # Assicurati che i dati siano numerici
     df['high'] = pd.to_numeric(df['high'], errors='coerce')
     df['low'] = pd.to_numeric(df['low'], errors='coerce')
     df = df.dropna()
@@ -257,7 +250,6 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
     with st.spinner(f"📡 Analisi tecnica {pair}..."):
         data = fetch_data(pair)
         
-        # DEBUG: mostra info sui dati
         if data is not None:
             st.write(f"📊 Dati caricati: {len(data)} righe, colonne: {list(data.columns)}")
         else:
@@ -313,7 +305,36 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
             signal, direction = "ATTENDI", "NEUTRAL"
             entry = sl = tp = current_price
         
+        # NUOVO: Display livelli Entry, TP, SL come metriche
         if direction != "NEUTRAL":
+            st.subheader("🎯 Livelli Operativi")
+            
+            cols_levels = st.columns(3)
+            with cols_levels[0]:
+                st.markdown(f"""
+                    <div class="level-box level-entry">
+                        <div class="level-label">🚀 Entry Point</div>
+                        <div class="level-value" style="color: #22d3ee;">{entry:.5f}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with cols_levels[1]:
+                st.markdown(f"""
+                    <div class="level-box level-tp">
+                        <div class="level-label">🎯 Take Profit</div>
+                        <div class="level-value" style="color: #4ade80;">{tp:.5f}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with cols_levels[2]:
+                st.markdown(f"""
+                    <div class="level-box level-sl">
+                        <div class="level-label">🛡️ Stop Loss</div>
+                        <div class="level-value" style="color: #f87171;">{sl:.5f}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            # Box segnale con R:R
             box_class = "signal-buy" if direction == "BUY" else "signal-sell"
             icon = "🟢" if direction == "BUY" else "🔴"
             rr = abs(tp - entry) / abs(sl - entry) if abs(sl - entry) > 0 else 0
@@ -321,11 +342,11 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
             st.markdown(f"""
                 <div class="{box_class}">
                     <h2>{icon} {signal}</h2>
-                    <p>Entry: {entry:.5f} | TP: {tp:.5f} | SL: {sl:.5f}</p>
-                    <p>R:R = 1:{rr:.1f}</p>
+                    <p style="font-size: 18px; margin: 10px 0;">Risk/Reward Ratio: <strong>1:{rr:.1f}</strong></p>
                 </div>
             """, unsafe_allow_html=True)
             
+            # Share
             st.markdown("---")
             base = pair.replace("/", "")
             txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
