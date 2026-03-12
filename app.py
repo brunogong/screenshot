@@ -8,64 +8,65 @@ from datetime import datetime
 import requests
 import pandas as pd
 
-# CSS CORRETTO - SOLO QUESTO BLOCCO CAMBIATO
+# CSS CORRETTO - Fix colori bottone e selectbox
 st.markdown("""
 <style>
     .stApp { background: #0f172a; }
-    .stApp, .stApp p, .stApp span, .stApp div { color: #f1f5f9 !important; }
+    .stApp, .stApp p, .stApp label, .stApp span, .stApp div { color: #f1f5f9 !important; }
     
-    /* LABELS CHIARE */
-    .stSelectbox label, .stTextInput label, .stFileUploader label {
-        color: #e2e8f0 !important;
-        font-weight: 600 !important;
-    }
-    
-    /* BOTTONI - TESTO SCURO SU SFONDO CHIARO */
-    .stButton>button {
-        background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
-        color: #ffffff !important;
-        font-weight: bold !important;
-        border: none !important;
-        border-radius: 12px !important;
-        padding: 16px !important;
-        font-size: 16px !important;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
-    }
-    
-    /* SELECTBOX - MENU A TENDINA */
+    /* FIX SELECTBOX - Testo scuro su sfondo chiaro */
     .stSelectbox > div > div {
         background-color: #1e293b !important;
         color: #f1f5f9 !important;
         border: 1px solid #475569 !important;
-        border-radius: 8px !important;
     }
-    
-    /* OPZIONI MENU A TENDINA */
-    div[role="listbox"] div {
+    .stSelectbox > div > div > div {
+        color: #f1f5f9 !important;
+    }
+    /* Opzioni del dropdown */
+    li[role="option"] {
         background-color: #1e293b !important;
         color: #f1f5f9 !important;
     }
-    
-    /* HOVER OPZIONI */
-    div[role="option"]:hover {
+    li[role="option"]:hover {
         background-color: #334155 !important;
+    }
+    
+    /* FIX BOTTONE - Testo scuro su sfondo chiaro */
+    .stButton > button {
+        background: linear-gradient(135deg, #06b6d4, #3b82f6) !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 12px 24px !important;
+        font-size: 14px !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #0891b2, #2563eb) !important;
         color: #ffffff !important;
     }
     
-    /* INPUT TESTO */
+    /* Input text */
     .stTextInput > div > div > input {
         background-color: #1e293b !important;
         color: #f1f5f9 !important;
         border: 1px solid #475569 !important;
-        border-radius: 8px !important;
     }
     
-    /* BADGE PREZZO */
+    /* Labels */
+    .stTextInput label, .stSelectbox label { 
+        color: #e2e8f0 !important; 
+        font-weight: 600 !important; 
+    }
+    
+    /* Badges prezzo */
     .price-auto { background: #059669; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: bold; }
     .price-delay { background: #d97706; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: bold; }
     .price-manual { background: #475569; color: white; padding: 5px 10px; border-radius: 5px; font-size: 12px; font-weight: bold; }
     
-    /* BOX E METRICHE */
+    /* Metriche e box */
     .metric-box { background: #1e293b; border: 2px solid #475569; border-radius: 12px; padding: 20px; margin: 8px 0; text-align: center; }
     .signal-buy { background: linear-gradient(135deg, #059669, #10b981); padding: 25px; border-radius: 16px; text-align: center; margin: 15px 0; }
     .signal-sell { background: linear-gradient(135deg, #dc2626, #ef4444); padding: 25px; border-radius: 16px; text-align: center; margin: 15px 0; }
@@ -73,15 +74,14 @@ st.markdown("""
     .tf-box { background: #1e293b; border: 3px solid #64748b; border-radius: 12px; padding: 15px; margin: 5px 0; text-align: center; }
     .tf-bullish { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
     .tf-bearish { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-    .hhll-box { background: #1e293b; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin: 10px 0; }
-    
-    /* PREZZI */
     .price-value { font-size: 24px; font-weight: bold; font-family: monospace; color: #fff !important; }
     .entry { color: #22d3ee !important; }
     .tp { color: #4ade80 !important; }
     .sl { color: #f87171 !important; }
+    .hhll-box { background: #1e293b; border: 2px solid #f59e0b; border-radius: 10px; padding: 15px; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ... (tutto il resto del codice rimane IDENTICO come prima)
 # API Keys
