@@ -8,7 +8,7 @@ from datetime import datetime
 import requests
 import pandas as pd
 
-# CSS (invariato)
+# CSS
 st.markdown("""
 <style>
     .stApp { background: #0f172a; }
@@ -27,7 +27,6 @@ st.markdown("""
     .tp { color: #4ade80 !important; }
     .sl { color: #f87171 !important; }
     .info-box { background: #1e3a5f; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 0 8px 8px 0; margin: 10px 0; }
-    /* Stili per i livelli di trading */
     .level-box { background: #1e293b; border: 2px solid #475569; border-radius: 12px; padding: 15px; text-align: center; margin: 5px 0; }
     .level-entry { border-color: #06b6d4; background: rgba(6, 182, 212, 0.1); }
     .level-tp { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
@@ -65,11 +64,10 @@ def get_price(symbol):
         return None, str(e)
 
 def fetch_data(pair):
-    """Dati storici per qualsiasi coppia - FIX: gestione robusta colonne"""
+    """Dati storici per qualsiasi coppia"""
     try:
         import yfinance as yf
         
-        # Mappa le coppie nel formato yfinance
         yf_symbols = {
             "EUR/USD": "EURUSD=X",
             "GBP/USD": "GBPUSD=X", 
@@ -83,7 +81,6 @@ def fetch_data(pair):
         if data.empty:
             return None
             
-        # FIX: Gestione robusta delle colonne
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         
@@ -305,7 +302,7 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
             signal, direction = "ATTENDI", "NEUTRAL"
             entry = sl = tp = current_price
         
-        # NUOVO: Display livelli Entry, TP, SL come metriche (SEMPRE VISIBILI)
+        # LIVELLI OPERATIVI - SEMPRE VISIBILI
         st.subheader("🎯 Livelli Operativi")
         
         cols_levels = st.columns(3)
