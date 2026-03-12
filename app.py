@@ -206,7 +206,7 @@ auto_check = st.checkbox("🔔 Scansione automatica (30s)", value=True)
 if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_width=True) or auto_check:
     
     active_signals = []
-    st.session_state['signals'] = {}  # Reset per avere dati freschi
+    st.session_state['signals'] = {}
     
     with st.spinner("📡 Recupero prezzi reali..."):
         for pair in PAIRS:
@@ -227,7 +227,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
             </div>
         """, unsafe_allow_html=True)
         
-        # Suono alert (solo primo rilevamento)
         new_signals = [s for s in active_signals if s['pair'] not in st.session_state['alerted']]
         if new_signals:
             st.session_state['alerted'].update([s['pair'] for s in new_signals])
@@ -249,7 +248,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
             if pair in st.session_state['signals']:
                 s = st.session_state['signals'][pair]
                 
-                # Card colore in base al segnale
                 if s['direction'] == "BUY":
                     card_class = "signal-buy"
                     icon = "🟢"
@@ -266,7 +264,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                 with st.container():
                     st.markdown(f'<div class="pair-card">', unsafe_allow_html=True)
                     
-                    # Header con prezzo grande e trend
                     st.markdown(f"""
                         <div class="{card_class}">
                             <h3>{icon} {pair}</h3>
@@ -282,7 +279,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # Info distanza livelli
                     st.markdown(f"""
                         <p style="text-align: center; font-size: 12px; margin: 10px 0;">
                             📊 Res: {s['resistance']:.5f} | Sup: {s['support']:.5f}<br>
@@ -290,7 +286,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                         </p>
                     """, unsafe_allow_html=True)
                     
-                    # Livelli operativi (sempre visibili)
                     st.markdown("<p style='font-size: 11px; text-align: center; margin-bottom: 5px;'>🎯 LIVELLI OPERATIVI</p>", unsafe_allow_html=True)
                     c1, c2, c3 = st.columns(3)
                     with c1:
@@ -315,7 +310,6 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                             </div>
                         """, unsafe_allow_html=True)
                     
-                    # R:R e pulsante copia (solo se c'è segnale reale)
                     if s['direction'] != "NEUTRAL":
                         rr = abs(s['tp'] - s['entry']) / abs(s['sl'] - s['entry']) if abs(s['sl'] - s['entry']) > 0 else 0
                         st.markdown(f"<p style='text-align: center; font-weight: bold; color: #f59e0b;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
@@ -330,10 +324,10 @@ R:R 1:{rr:.1f}"""
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
-# Sezione dettaglio singola coppia
+# Sezione dettaglio singola coppia (senza grafico)
 st.markdown("---")
 st.subheader("🔍 Analisi Dettagliata")
-selected = st.selectbox("Seleziona coppia per grafico e dettagli completi", PAIRS)
+selected = st.selectbox("Seleziona coppia per dettagli completi", PAIRS)
 
 if selected in st.session_state['signals']:
     s = st.session_state['signals'][selected]
@@ -353,16 +347,6 @@ if selected in st.session_state['signals']:
             <p>Distanza da Res: {s['dist_res']:.1f} pip | Distanza da Sup: {s['dist_sup']:.1f} pip</p>
         </div>
     """, unsafe_allow_html=True)
-    
-    # Mini grafico se yfinance funziona
-    try:
-        import yfinance as yf
-        yf_symbols = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X"}
-        chart_data = yf.download(yf_symbols[selected], period="5d", interval="1h", progress=False)['Close']
-        if not chart_data.empty:
-            st.line_chart(chart_data, use_container_width=True)
-    except:
-        pass
 
 st.markdown("---")
 st.caption(f"⏰ {datetime.now().strftime('%H:%M:%S')} | Forex AI Multi-Alert")
