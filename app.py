@@ -305,36 +305,36 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
             signal, direction = "ATTENDI", "NEUTRAL"
             entry = sl = tp = current_price
         
-        # NUOVO: Display livelli Entry, TP, SL come metriche
+        # NUOVO: Display livelli Entry, TP, SL come metriche (SEMPRE VISIBILI)
+        st.subheader("🎯 Livelli Operativi")
+        
+        cols_levels = st.columns(3)
+        with cols_levels[0]:
+            st.markdown(f"""
+                <div class="level-box level-entry">
+                    <div class="level-label">🚀 Entry Point</div>
+                    <div class="level-value" style="color: #22d3ee;">{entry:.5f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with cols_levels[1]:
+            st.markdown(f"""
+                <div class="level-box level-tp">
+                    <div class="level-label">🎯 Take Profit</div>
+                    <div class="level-value" style="color: #4ade80;">{tp:.5f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with cols_levels[2]:
+            st.markdown(f"""
+                <div class="level-box level-sl">
+                    <div class="level-label">🛡️ Stop Loss</div>
+                    <div class="level-value" style="color: #f87171;">{sl:.5f}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Box segnale (solo se c'è direzione)
         if direction != "NEUTRAL":
-            st.subheader("🎯 Livelli Operativi")
-            
-            cols_levels = st.columns(3)
-            with cols_levels[0]:
-                st.markdown(f"""
-                    <div class="level-box level-entry">
-                        <div class="level-label">🚀 Entry Point</div>
-                        <div class="level-value" style="color: #22d3ee;">{entry:.5f}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            with cols_levels[1]:
-                st.markdown(f"""
-                    <div class="level-box level-tp">
-                        <div class="level-label">🎯 Take Profit</div>
-                        <div class="level-value" style="color: #4ade80;">{tp:.5f}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            with cols_levels[2]:
-                st.markdown(f"""
-                    <div class="level-box level-sl">
-                        <div class="level-label">🛡️ Stop Loss</div>
-                        <div class="level-value" style="color: #f87171;">{sl:.5f}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            # Box segnale con R:R
             box_class = "signal-buy" if direction == "BUY" else "signal-sell"
             icon = "🟢" if direction == "BUY" else "🔴"
             rr = abs(tp - entry) / abs(sl - entry) if abs(sl - entry) > 0 else 0
