@@ -18,13 +18,16 @@ st.markdown("""
     .stButton > button { background: linear-gradient(135deg, #06b6d4, #3b82f6) !important; color: #ffffff !important; font-weight: bold !important; }
     .signal-buy { background: linear-gradient(135deg, #059669, #10b981); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-green 2s infinite; }
     .signal-sell { background: linear-gradient(135deg, #dc2626, #ef4444); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-red 2s infinite; }
-    .signal-wait { background: #1e293b; border: 2px solid #475569; padding: 15px; border-radius: 12px; text-align: center; opacity: 0.7; }
+    .signal-wait { background: #1e293b; border: 2px solid #475569; padding: 15px; border-radius: 12px; text-align: center; }
     @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } }
     @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } }
     .alert-banner { background: linear-gradient(90deg, #f59e0b, #d97706); color: white; padding: 15px; border-radius: 12px; text-align: center; margin: 10px 0; animation: blink 1s infinite; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
     .pair-card { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 15px; margin: 10px 0; }
-    .pair-card:hover { border-color: #06b6d4; }
+    .trend-bullish { color: #10b981; font-weight: bold; }
+    .trend-bearish { color: #ef4444; font-weight: bold; }
+    .trend-neutral { color: #94a3b8; }
+    .price-big { font-size: 28px; font-weight: bold; font-family: monospace; color: #fff; }
     .level-box { background: #0f172a; border: 2px solid #475569; border-radius: 8px; padding: 10px; text-align: center; }
     .level-entry { border-color: #06b6d4; }
     .level-tp { border-color: #10b981; }
@@ -32,6 +35,7 @@ st.markdown("""
     .level-label { font-size: 10px; text-transform: uppercase; opacity: 0.7; }
     .level-value { font-size: 16px; font-weight: bold; font-family: monospace; }
     .info-box { background: #1e3a5f; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 0 8px 8px 0; margin: 10px 0; }
+    .timestamp { font-size: 11px; color: #64748b; text-align: right; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,6 +55,8 @@ if 'signals' not in st.session_state:
     st.session_state['signals'] = {}
 if 'alerted' not in st.session_state:
     st.session_state['alerted'] = set()
+if 'last_update' not in st.session_state:
+    st.session_state['last_update'] = None
 
 PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"]
 
@@ -58,13 +64,13 @@ PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"]
 # FUNZIONI
 # ============================================================================
 
-@st.cache_data(ttl=10)
 def get_price(symbol):
+    """Prezzo SENZA cache per avere sempre dati freschi"""
     if not TWELVE_DATA_KEY:
         return None, "No API Key"
     try:
         url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
-        response = requests.get(url, timeout=3)
+        response = requests.get(url, timeout=5)
         data = response.json()
         if "price" in data:
             return float(data["price"]), "Twelve Data"
@@ -179,7 +185,8 @@ def analyze_pair(pair):
         'trend': ind['trend'], 'rsi': ind['rsi'],
         'strength': ind['strength'], 'atr': ind['atr_pips'],
         'resistance': levels['resistance_1'], 'support': levels['support_1'],
-        'dist_res': dist_res, 'dist_sup': dist_sup
+        'dist_res': dist_res, 'dist_sup': dist_sup,
+        'time': datetime.now()
     }
 
 # ============================================================================
@@ -188,22 +195,28 @@ def analyze_pair(pair):
 
 st.title("📈 Forex AI - Multi Alert")
 
+# Info ultimo aggiornamento
+if st.session_state['last_update']:
+    st.markdown(f"<p class='timestamp'>Ultimo aggiornamento: {st.session_state['last_update'].strftime('%H:%M:%S')}</p>", unsafe_allow_html=True)
+
 # Toggle auto-analisi
-auto_check = st.checkbox("🔔 Scansione automatica tutte le coppie (30s)", value=True)
+auto_check = st.checkbox("🔔 Scansione automatica (30s)", value=True)
 
 # Pulsante scansione manuale
 if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_width=True) or auto_check:
     
     active_signals = []
+    st.session_state['signals'] = {}  # Reset per avere dati freschi
     
-    with st.spinner("📡 Analisi in corso..."):
+    with st.spinner("📡 Recupero prezzi reali..."):
         for pair in PAIRS:
             result = analyze_pair(pair)
             if result:
-                st.session_state['prices'][pair] = result['price']
                 st.session_state['signals'][pair] = result
                 if result['direction'] != "NEUTRAL":
                     active_signals.append(result)
+    
+    st.session_state['last_update'] = datetime.now()
     
     # ALERT se ci sono segnali attivi
     if active_signals:
@@ -224,10 +237,11 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                 </audio>
             """, unsafe_allow_html=True)
     else:
-        st.session_state['alerted'] = set()  # Reset quando non ci sono segnali
+        st.session_state['alerted'] = set()
+        st.info("⏳ Nessun segnale attivo - tutte le coppie in attesa")
     
-    # Display tutte le coppie in griglia
-    st.subheader("📊 Stato Coppie")
+    # Display tutte le coppie in griglia 2x2
+    st.subheader("📊 Dashboard Coppie")
     
     cols = st.columns(2)
     for idx, pair in enumerate(PAIRS):
@@ -239,82 +253,116 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                 if s['direction'] == "BUY":
                     card_class = "signal-buy"
                     icon = "🟢"
+                    trend_class = "trend-bullish"
                 elif s['direction'] == "SELL":
                     card_class = "signal-sell"
                     icon = "🔴"
+                    trend_class = "trend-bearish"
                 else:
                     card_class = "signal-wait"
                     icon = "⚪"
+                    trend_class = "trend-neutral"
                 
                 with st.container():
                     st.markdown(f'<div class="pair-card">', unsafe_allow_html=True)
                     
-                    # Header
+                    # Header con prezzo grande e trend
                     st.markdown(f"""
                         <div class="{card_class}">
                             <h3>{icon} {pair}</h3>
-                            <p style="font-size: 24px; font-weight: bold; margin: 0;">{s['price']:.5f}</p>
-                            <p style="margin: 5px 0;">{s['signal']} | {s['trend']} | RSI {s['rsi']}</p>
+                            <div class="price-big">{s['price']:.5f}</div>
+                            <p style="margin: 5px 0;">
+                                <span class="{trend_class}">{s['trend']}</span> | 
+                                Forza: {s['strength']}% | 
+                                RSI: {s['rsi']}
+                            </p>
+                            <p style="font-size: 12px; margin: 0;">
+                                Segnale: <strong>{s['signal']}</strong>
+                            </p>
                         </div>
                     """, unsafe_allow_html=True)
                     
-                    # Livelli (sempre visibili)
+                    # Info distanza livelli
+                    st.markdown(f"""
+                        <p style="text-align: center; font-size: 12px; margin: 10px 0;">
+                            📊 Res: {s['resistance']:.5f} | Sup: {s['support']:.5f}<br>
+                            📏 Dist. Res: {s['dist_res']:.1f} pip | Dist. Sup: {s['dist_sup']:.1f} pip | ATR: {s['atr']} pip
+                        </p>
+                    """, unsafe_allow_html=True)
+                    
+                    # Livelli operativi (sempre visibili)
+                    st.markdown("<p style='font-size: 11px; text-align: center; margin-bottom: 5px;'>🎯 LIVELLI OPERATIVI</p>", unsafe_allow_html=True)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.markdown(f"""
+                            <div class="level-box level-entry">
+                                <div class="level-label">Entry</div>
+                                <div class="level-value" style="color: #22d3ee;">{s['entry']:.5f}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    with c2:
+                        st.markdown(f"""
+                            <div class="level-box level-tp">
+                                <div class="level-label">TP</div>
+                                <div class="level-value" style="color: #4ade80;">{s['tp']:.5f}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    with c3:
+                        st.markdown(f"""
+                            <div class="level-box level-sl">
+                                <div class="level-label">SL</div>
+                                <div class="level-value" style="color: #f87171;">{s['sl']:.5f}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # R:R e pulsante copia (solo se c'è segnale reale)
                     if s['direction'] != "NEUTRAL":
-                        c1, c2, c3 = st.columns(3)
-                        with c1:
-                            st.markdown(f"""
-                                <div class="level-box level-entry">
-                                    <div class="level-label">Entry</div>
-                                    <div class="level-value" style="color: #22d3ee;">{s['entry']:.5f}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c2:
-                            st.markdown(f"""
-                                <div class="level-box level-tp">
-                                    <div class="level-label">TP</div>
-                                    <div class="level-value" style="color: #4ade80;">{s['tp']:.5f}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        with c3:
-                            st.markdown(f"""
-                                <div class="level-box level-sl">
-                                    <div class="level-label">SL</div>
-                                    <div class="level-value" style="color: #f87171;">{s['sl']:.5f}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                        
-                        # R:R e pulsante copia
                         rr = abs(s['tp'] - s['entry']) / abs(s['sl'] - s['entry']) if abs(s['sl'] - s['entry']) > 0 else 0
-                        st.markdown(f"<p style='text-align: center;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align: center; font-weight: bold; color: #f59e0b;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
                         
-                        txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
+                        txt = f"""🎯 {pair} - {s['time'].strftime('%H:%M')}
 {s['signal']} @ {s['entry']:.5f}
 TP: {s['tp']:.5f} | SL: {s['sl']:.5f}
 R:R 1:{rr:.1f}"""
                         st.code(txt, language=None)
                     else:
-                        # Info per coppie neutre
-                        st.markdown(f"""
-                            <p style="text-align: center; font-size: 12px; opacity: 0.7;">
-                                Dist. Res: {s['dist_res']:.1f} pip | Dist. Sup: {s['dist_sup']:.1f} pip
-                            </p>
-                        """, unsafe_allow_html=True)
+                        st.markdown("<p style='text-align: center; color: #64748b; font-size: 12px;'>Attendi vicinanza a livelli</p>", unsafe_allow_html=True)
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
-# Dettaglio singola coppia
+# Sezione dettaglio singola coppia
 st.markdown("---")
-st.subheader("🔍 Dettaglio Coppia")
-selected = st.selectbox("Seleziona per analisi completa", PAIRS)
+st.subheader("🔍 Analisi Dettagliata")
+selected = st.selectbox("Seleziona coppia per grafico e dettagli completi", PAIRS)
 
 if selected in st.session_state['signals']:
     s = st.session_state['signals'][selected]
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Trend", s['trend'], delta=f"Forza {s['strength']}%")
+    with col2:
+        st.metric("RSI", s['rsi'])
+    with col3:
+        st.metric("ATR", f"{s['atr']} pip")
+    
     st.markdown(f"""
         <div class="info-box">
-            <h3>{selected} | {s['signal']} | Forza: {s['strength']}%</h3>
-            <p>Resistenza: {s['resistance']:.5f} | Supporto: {s['support']:.5f} | ATR: {s['atr']} pip</p>
+            <h4>📈 {selected} | Prezzo: {s['price']:.5f} | Sorgente: {s['source']}</h4>
+            <p>Resistenza: {s['resistance']:.5f} | Supporto: {s['support']:.5f}</p>
+            <p>Distanza da Res: {s['dist_res']:.1f} pip | Distanza da Sup: {s['dist_sup']:.1f} pip</p>
         </div>
     """, unsafe_allow_html=True)
+    
+    # Mini grafico se yfinance funziona
+    try:
+        import yfinance as yf
+        yf_symbols = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X"}
+        chart_data = yf.download(yf_symbols[selected], period="5d", interval="1h", progress=False)['Close']
+        if not chart_data.empty:
+            st.line_chart(chart_data, use_container_width=True)
+    except:
+        pass
 
 st.markdown("---")
-st.caption(f"⏰ {datetime.now().strftime('%H:%M:%S')} | Ultimo aggiornamento")
+st.caption(f"⏰ {datetime.now().strftime('%H:%M:%S')} | Forex AI Multi-Alert")
