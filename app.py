@@ -40,7 +40,6 @@ except:
 # FUNZIONI
 # ============================================================================
 
-# FIX: Aggiunto parametro symbol per supportare qualsiasi coppia
 @st.cache_data(ttl=10)
 def get_price(symbol):
     """Prezzo da Twelve Data per qualsiasi coppia"""
@@ -58,11 +57,11 @@ def get_price(symbol):
     except Exception as e:
         return None, str(e)
 
-# FIX: Aggiunto parametro pair per supportare qualsiasi coppia
 def fetch_data(pair):
-    """Dati storici per qualsiasi coppia"""
+    """Dati storici per qualsiasi coppia - FIX: gestione robusta colonne"""
     try:
         import yfinance as yf
+        
         # Mappa le coppie nel formato yfinance
         yf_symbols = {
             "EUR/USD": "EURUSD=X",
@@ -71,17 +70,69 @@ def fetch_data(pair):
             "AUD/USD": "AUDUSD=X"
         }
         symbol = yf_symbols.get(pair, "EURUSD=X")
+        
         data = yf.download(symbol, period="30d", interval="1h", progress=False)
-        if not data.empty:
-            data.columns = ['open', 'high', 'low', 'close', 'adj_close', 'volume']
-            return data[['open', 'high', 'low', 'close']]
+        
+        if data.empty:
+            return None
+            
+        # FIX: Gestione robusta delle colonne
+        # yfinance può restituire MultiIndex o colonne singole
+        if isinstance(data.columns, pd.MultiIndex):
+            # Se è MultiIndex, prendi il primo livello
+            data.columns = data.columns.get_level_values(0)
+        
+        # Rinomina le colonne in lowercase per sicurezza
+        data = data.rename(columns=str.lower)
+        
+        # Mappa standard delle colonne yfinance
+        column_mapping = {
+            'open': 'open',
+            'high': 'high', 
+            'low': 'low',
+            'close': 'close',
+            'adj close': 'close',  # usa adj close come close se presente
+            'adj_close': 'close',
+            'volume': 'volume'
+        }
+        
+        # Seleziona solo le colonne necessarie
+        available_cols = {}
+        for std_name, target in column_mapping.items():
+            if std_name in data.columns:
+                available_cols[std_name] = target
+        
+        # Rimuovi duplicati mantenendo solo open, high, low, close
+        cols_to_use = ['open', 'high', 'low', 'close']
+        result = pd.DataFrame()
+        
+        for col in cols_to_use:
+            # Trova la prima colonna che corrisponde
+            for orig, mapped in available_cols.items():
+                if mapped == col and orig in data.columns:
+                    result[col] = data[orig]
+                    break
+        
+        if len(result.columns) == 4:
+            return result
+            
     except Exception as e:
         st.error(f"Errore dati: {e}")
+        
     return None
 
 def calculate_indicators(df):
     """Indicatori tecnici"""
     if df is None or len(df) < 20:
+        return None
+    
+    # Assicurati che i dati siano float
+    for col in ['open', 'high', 'low', 'close']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    df = df.dropna()
+    
+    if len(df) < 20:
         return None
     
     df['sma20'] = df['close'].rolling(20).mean()
@@ -90,7 +141,8 @@ def calculate_indicators(df):
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    df['rsi'] = 100 - (100 / (1 + (gain / loss)))
+    rs = gain / loss
+    df['rsi'] = 100 - (100 / (1 + rs))
     
     hl = df['high'] - df['low']
     df['atr'] = hl.rolling(14).mean()
@@ -109,24 +161,32 @@ def calculate_indicators(df):
     return {
         'trend': trend,
         'strength': max(30, min(95, score)),
-        'rsi': round(last['rsi'], 1),
-        'atr_pips': round(last['atr'] * 10000, 1),
-        'close': round(last['close'], 5)
+        'rsi': round(float(last['rsi']), 1),
+        'atr_pips': round(float(last['atr']) * 10000, 1),
+        'close': round(float(last['close']), 5)
     }
 
 def find_levels(df):
     """Livelli chiave"""
-    if df is None:
+    if df is None or len(df) < 20:
         return None
     
+    # Assicurati che i dati siano numerici
+    df['high'] = pd.to_numeric(df['high'], errors='coerce')
+    df['low'] = pd.to_numeric(df['low'], errors='coerce')
+    df = df.dropna()
+    
     recent = df.tail(120)
+    if len(recent) < 3:
+        return None
+        
     highs = recent['high'].nlargest(3)
     lows = recent['low'].nsmallest(3)
     
     return {
-        'resistance_1': round(highs.iloc[0], 5),
-        'support_1': round(lows.iloc[0], 5),
-        'range': round(highs.iloc[0] - lows.iloc[0], 5)
+        'resistance_1': round(float(highs.iloc[0]), 5),
+        'support_1': round(float(lows.iloc[0]), 5),
+        'range': round(float(highs.iloc[0] - lows.iloc[0]), 5)
     }
 
 # ============================================================================
@@ -135,7 +195,6 @@ def find_levels(df):
 
 st.title("📈 Forex AI")
 
-# FIX: Inizializza session state con chiave dinamica per coppia
 if 'prices' not in st.session_state:
     st.session_state['prices'] = {}
 if 'sources' not in st.session_state:
@@ -145,18 +204,11 @@ if 'times' not in st.session_state:
 
 pair = st.selectbox("💱 Coppia", ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"], index=0)
 
-# FIX: Resetta il prezzo quando cambia la coppia (usando callback)
-def on_pair_change():
-    # Non serve fare nulla di speciale, il prezzo verrà letto dalla chiave corretta
-    pass
-
-# Recupero prezzo
 col1, col2 = st.columns([2, 1])
 
 with col1:
     if st.button("🔄 Aggiorna Prezzo", use_container_width=True):
         with st.spinner("📡 Recupero..."):
-            # FIX: Usa la funzione generica con il simbolo corretto
             price, source = get_price(pair)
             
             if price:
@@ -174,7 +226,6 @@ with col2:
         color = "🟢" if age < 60 else "🟡" if age < 300 else "🔴"
         st.markdown(f'{color} <span style="font-size: 12px;">{st.session_state["sources"].get(pair, "")}</span>', unsafe_allow_html=True)
 
-# Display prezzo
 if pair in st.session_state['prices'] and st.session_state['prices'][pair] > 0:
     current_price = st.session_state['prices'][pair]
     update_time = st.session_state['times'].get(pair)
@@ -197,7 +248,6 @@ st.markdown("---")
 
 if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
     
-    # FIX: Controlla il prezzo della coppia selezionata
     if pair not in st.session_state['prices'] or st.session_state['prices'][pair] <= 0:
         st.error("❌ Clicca prima 'Aggiorna Prezzo'!")
         st.stop()
@@ -205,12 +255,18 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
     current_price = st.session_state['prices'][pair]
     
     with st.spinner(f"📡 Analisi tecnica {pair}..."):
-        # FIX: Passa la coppia selezionata alla funzione
         data = fetch_data(pair)
+        
+        # DEBUG: mostra info sui dati
+        if data is not None:
+            st.write(f"📊 Dati caricati: {len(data)} righe, colonne: {list(data.columns)}")
+        else:
+            st.error("❌ Impossibile caricare dati storici")
+            st.stop()
+            
         ind = calculate_indicators(data)
         levels = find_levels(data)
     
-    # Livelli
     if levels:
         st.subheader("🏗️ Livelli Chiave")
         
@@ -225,7 +281,6 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
     if uploaded:
         st.image(uploaded, use_column_width=True)
     
-    # Indicatori
     if ind:
         st.subheader("📊 Indicatori")
         
@@ -258,7 +313,6 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
             signal, direction = "ATTENDI", "NEUTRAL"
             entry = sl = tp = current_price
         
-        # Display segnale
         if direction != "NEUTRAL":
             box_class = "signal-buy" if direction == "BUY" else "signal-sell"
             icon = "🟢" if direction == "BUY" else "🔴"
@@ -272,7 +326,6 @@ if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
                 </div>
             """, unsafe_allow_html=True)
             
-            # Share
             st.markdown("---")
             base = pair.replace("/", "")
             txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
