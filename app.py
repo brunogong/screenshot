@@ -19,9 +19,12 @@ st.markdown("""
     .signal-buy { background: linear-gradient(135deg, #059669, #10b981); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-green 2s infinite; }
     .signal-sell { background: linear-gradient(135deg, #dc2626, #ef4444); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-red 2s infinite; }
     .signal-wait { background: #1e293b; border: 2px solid #475569; padding: 15px; border-radius: 12px; text-align: center; }
+    .trend-strong-bull { background: linear-gradient(135deg, #065f46, #059669); padding: 15px; border-radius: 12px; text-align: center; border: 2px solid #10b981; }
+    .trend-strong-bear { background: linear-gradient(135deg, #7f1d1d, #dc2626); padding: 15px; border-radius: 12px; text-align: center; border: 2px solid #ef4444; }
     @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } }
     @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } }
     .alert-banner { background: linear-gradient(90deg, #f59e0b, #d97706); color: white; padding: 15px; border-radius: 12px; text-align: center; margin: 10px 0; animation: blink 1s infinite; }
+    .trend-banner { background: linear-gradient(90deg, #3b82f6, #06b6d4); color: white; padding: 12px; border-radius: 12px; text-align: center; margin: 10px 0; }
     @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
     .pair-card { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 15px; margin: 10px 0; }
     .trend-bullish { color: #10b981; font-weight: bold; }
@@ -36,6 +39,11 @@ st.markdown("""
     .level-value { font-size: 16px; font-weight: bold; font-family: monospace; }
     .info-box { background: #1e3a5f; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 0 8px 8px 0; margin: 10px 0; }
     .timestamp { font-size: 11px; color: #64748b; text-align: right; }
+    .strength-bar { background: #334155; height: 8px; border-radius: 4px; margin: 5px 0; overflow: hidden; }
+    .strength-fill { height: 100%; border-radius: 4px; }
+    .strength-high { background: linear-gradient(90deg, #10b981, #059669); }
+    .strength-medium { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .strength-low { background: linear-gradient(90deg, #64748b, #475569); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -164,6 +172,9 @@ def analyze_pair(pair):
     dist_res = (levels['resistance_1'] - price) * 10000
     dist_sup = (price - levels['support_1']) * 10000
     
+    # Determina se c'è un trend forte (indipendentemente dal segnale)
+    strong_trend = ind['strength'] >= 60 and ind['trend'] != "NEUTRAL"
+    
     if ind['trend'] == "BULLISH" and dist_sup < 20:
         signal, direction = "BUY", "BUY"
         entry = price
@@ -186,6 +197,7 @@ def analyze_pair(pair):
         'strength': ind['strength'], 'atr': ind['atr_pips'],
         'resistance': levels['resistance_1'], 'support': levels['support_1'],
         'dist_res': dist_res, 'dist_sup': dist_sup,
+        'strong_trend': strong_trend,
         'time': datetime.now()
     }
 
@@ -206,6 +218,7 @@ auto_check = st.checkbox("🔔 Scansione automatica (30s)", value=True)
 if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_width=True) or auto_check:
     
     active_signals = []
+    strong_trends = []
     st.session_state['signals'] = {}
     
     with st.spinner("📡 Recupero prezzi reali..."):
@@ -215,14 +228,16 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                 st.session_state['signals'][pair] = result
                 if result['direction'] != "NEUTRAL":
                     active_signals.append(result)
+                elif result['strong_trend']:
+                    strong_trends.append(result)
     
     st.session_state['last_update'] = datetime.now()
     
-    # ALERT se ci sono segnali attivi
+    # ALERT segnali di ingresso
     if active_signals:
         st.markdown(f"""
             <div class="alert-banner">
-                <h2>🚨 {len(active_signals)} SEGNALE/I ATTIVO/I!</h2>
+                <h2>🚨 {len(active_signals)} SEGNALE/I DI INGRESSO!</h2>
                 <p>{', '.join([s['pair'] + ' ' + s['signal'] for s in active_signals])}</p>
             </div>
         """, unsafe_allow_html=True)
@@ -235,96 +250,141 @@ if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_wid
                     <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE" type="audio/wav">
                 </audio>
             """, unsafe_allow_html=True)
-    else:
-        st.session_state['alerted'] = set()
-        st.info("⏳ Nessun segnale attivo - tutte le coppie in attesa")
     
-    # Display tutte le coppie in griglia 2x2
+    # BANNER trend forti (solo se non ci sono segnali attivi)
+    elif strong_trends:
+        trend_text = ', '.join([f"{s['pair']} ({s['trend']} {s['strength']}%)" for s in strong_trends])
+        st.markdown(f"""
+            <div class="trend-banner">
+                <h3>📊 Trend Importanti Rilevati</h3>
+                <p>{trend_text}</p>
+                <p style="font-size: 12px; opacity: 0.8;">Attendi segnale di ingresso...</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.session_state['alerted'] = set()
+    
+    else:
+        st.info("⏳ Nessun segnale attivo - tutte le coppie in attesa o trend neutrale")
+        st.session_state['alerted'] = set()
+    
+    # Display TUTTE le coppie nella dashboard
     st.subheader("📊 Dashboard Coppie")
     
-    cols = st.columns(2)
-    for idx, pair in enumerate(PAIRS):
-        with cols[idx % 2]:
-            if pair in st.session_state['signals']:
-                s = st.session_state['signals'][pair]
-                
-                if s['direction'] == "BUY":
-                    card_class = "signal-buy"
-                    icon = "🟢"
-                    trend_class = "trend-bullish"
-                elif s['direction'] == "SELL":
-                    card_class = "signal-sell"
-                    icon = "🔴"
-                    trend_class = "trend-bearish"
-                else:
-                    card_class = "signal-wait"
-                    icon = "⚪"
-                    trend_class = "trend-neutral"
-                
-                with st.container():
-                    st.markdown(f'<div class="pair-card">', unsafe_allow_html=True)
+    if not st.session_state['signals']:
+        st.warning("⚠️ Nessun dato disponibile. Controlla la tua API key.")
+    else:
+        cols = st.columns(2)
+        for idx, pair in enumerate(PAIRS):
+            with cols[idx % 2]:
+                if pair in st.session_state['signals']:
+                    s = st.session_state['signals'][pair]
                     
-                    st.markdown(f"""
-                        <div class="{card_class}">
-                            <h3>{icon} {pair}</h3>
-                            <div class="price-big">{s['price']:.5f}</div>
-                            <p style="margin: 5px 0;">
-                                <span class="{trend_class}">{s['trend']}</span> | 
-                                Forza: {s['strength']}% | 
-                                RSI: {s['rsi']}
-                            </p>
-                            <p style="font-size: 12px; margin: 0;">
-                                Segnale: <strong>{s['signal']}</strong>
-                            </p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    # Determina lo stile della card
+                    if s['direction'] == "BUY":
+                        card_class = "signal-buy"
+                        icon = "🟢"
+                        trend_class = "trend-bullish"
+                        status_text = "🚨 SEGNALE BUY"
+                    elif s['direction'] == "SELL":
+                        card_class = "signal-sell"
+                        icon = "🔴"
+                        trend_class = "trend-bearish"
+                        status_text = "🚨 SEGNALE SELL"
+                    elif s['strong_trend'] and s['trend'] == "BULLISH":
+                        card_class = "trend-strong-bull"
+                        icon = "📈"
+                        trend_class = "trend-bullish"
+                        status_text = f"TREND FORTE {s['strength']}%"
+                    elif s['strong_trend'] and s['trend'] == "BEARISH":
+                        card_class = "trend-strong-bear"
+                        icon = "📉"
+                        trend_class = "trend-bearish"
+                        status_text = f"TREND FORTE {s['strength']}%"
+                    else:
+                        card_class = "signal-wait"
+                        icon = "⚪"
+                        trend_class = "trend-neutral"
+                        status_text = "ATTENDI"
                     
-                    st.markdown(f"""
-                        <p style="text-align: center; font-size: 12px; margin: 10px 0;">
-                            📊 Res: {s['resistance']:.5f} | Sup: {s['support']:.5f}<br>
-                            📏 Dist. Res: {s['dist_res']:.1f} pip | Dist. Sup: {s['dist_sup']:.1f} pip | ATR: {s['atr']} pip
-                        </p>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown("<p style='font-size: 11px; text-align: center; margin-bottom: 5px;'>🎯 LIVELLI OPERATIVI</p>", unsafe_allow_html=True)
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.markdown(f"""
-                            <div class="level-box level-entry">
-                                <div class="level-label">Entry</div>
-                                <div class="level-value" style="color: #22d3ee;">{s['entry']:.5f}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    with c2:
-                        st.markdown(f"""
-                            <div class="level-box level-tp">
-                                <div class="level-label">TP</div>
-                                <div class="level-value" style="color: #4ade80;">{s['tp']:.5f}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    with c3:
-                        st.markdown(f"""
-                            <div class="level-box level-sl">
-                                <div class="level-label">SL</div>
-                                <div class="level-value" style="color: #f87171;">{s['sl']:.5f}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
-                    
-                    if s['direction'] != "NEUTRAL":
-                        rr = abs(s['tp'] - s['entry']) / abs(s['sl'] - s['entry']) if abs(s['sl'] - s['entry']) > 0 else 0
-                        st.markdown(f"<p style='text-align: center; font-weight: bold; color: #f59e0b;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
+                    with st.container():
+                        st.markdown(f'<div class="pair-card">', unsafe_allow_html=True)
                         
-                        txt = f"""🎯 {pair} - {s['time'].strftime('%H:%M')}
+                        # Header con prezzo e trend
+                        st.markdown(f"""
+                            <div class="{card_class}">
+                                <h3>{icon} {pair}</h3>
+                                <div class="price-big">{s['price']:.5f}</div>
+                                <p style="margin: 5px 0; font-size: 14px;">
+                                    <span class="{trend_class}">{s['trend']}</span> | RSI: {s['rsi']}
+                                </p>
+                                <p style="font-size: 13px; margin: 0; font-weight: bold;">
+                                    {status_text}
+                                </p>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Barra forza trend
+                        strength_width = s['strength']
+                        strength_color = "strength-high" if s['strength'] >= 60 else "strength-medium" if s['strength'] >= 40 else "strength-low"
+                        st.markdown(f"""
+                            <div style="margin: 10px 0;">
+                                <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
+                                    <span>Forza Trend</span>
+                                    <span>{s['strength']}%</span>
+                                </div>
+                                <div class="strength-bar">
+                                    <div class="strength-fill {strength_color}" style="width: {strength_width}%;"></div>
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Info livelli
+                        st.markdown(f"""
+                            <p style="text-align: center; font-size: 11px; margin: 8px 0; opacity: 0.9;">
+                                📊 Res: {s['resistance']:.5f} | Sup: {s['support']:.5f}<br>
+                                📏 D.Res: {s['dist_res']:.1f}p | D.Sup: {s['dist_sup']:.1f}p | ATR: {s['atr']}p
+                            </p>
+                        """, unsafe_allow_html=True)
+                        
+                        # Livelli operativi (sempre visibili)
+                        st.markdown("<p style='font-size: 10px; text-align: center; margin-bottom: 5px; opacity: 0.7;'>🎯 LIVELLI</p>", unsafe_allow_html=True)
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.markdown(f"""
+                                <div class="level-box level-entry">
+                                    <div class="level-label">Entry</div>
+                                    <div class="level-value" style="color: #22d3ee; font-size: 14px;">{s['entry']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(f"""
+                                <div class="level-box level-tp">
+                                    <div class="level-label">TP</div>
+                                    <div class="level-value" style="color: #4ade80; font-size: 14px;">{s['tp']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        with c3:
+                            st.markdown(f"""
+                                <div class="level-box level-sl">
+                                    <div class="level-label">SL</div>
+                                    <div class="level-value" style="color: #f87171; font-size: 14px;">{s['sl']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # R:R e pulsante copia (solo se c'è segnale reale)
+                        if s['direction'] != "NEUTRAL":
+                            rr = abs(s['tp'] - s['entry']) / abs(s['sl'] - s['entry']) if abs(s['sl'] - s['entry']) > 0 else 0
+                            st.markdown(f"<p style='text-align: center; font-weight: bold; color: #f59e0b; margin: 8px 0;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
+                            
+                            txt = f"""🎯 {pair} - {s['time'].strftime('%H:%M')}
 {s['signal']} @ {s['entry']:.5f}
 TP: {s['tp']:.5f} | SL: {s['sl']:.5f}
 R:R 1:{rr:.1f}"""
-                        st.code(txt, language=None)
-                    else:
-                        st.markdown("<p style='text-align: center; color: #64748b; font-size: 12px;'>Attendi vicinanza a livelli</p>", unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+                            st.code(txt, language=None)
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-# Sezione dettaglio singola coppia (senza grafico)
+# Sezione dettaglio singola coppia
 st.markdown("---")
 st.subheader("🔍 Analisi Dettagliata")
 selected = st.selectbox("Seleziona coppia per dettagli completi", PAIRS)
@@ -340,11 +400,16 @@ if selected in st.session_state['signals']:
     with col3:
         st.metric("ATR", f"{s['atr']} pip")
     
+    # Info trend forte
+    if s['strong_trend']:
+        st.success(f"📊 Trend forte rilevato: {s['trend']} con {s['strength']}% di forza")
+    
     st.markdown(f"""
         <div class="info-box">
             <h4>📈 {selected} | Prezzo: {s['price']:.5f} | Sorgente: {s['source']}</h4>
             <p>Resistenza: {s['resistance']:.5f} | Supporto: {s['support']:.5f}</p>
-            <p>Distanza da Res: {s['dist_res']:.1f} pip | Distanza da Sup: {s['dist_sup']:.1f} pip</p>
+            <p>Distanza da Resistenza: {s['dist_res']:.1f} pip | Distanza da Supporto: {s['dist_sup']:.1f} pip</p>
+            <p>Segnale attuale: <strong>{s['signal']}</strong> | Trend: <strong>{s['trend']}</strong></p>
         </div>
     """, unsafe_allow_html=True)
 
