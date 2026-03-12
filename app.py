@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="Forex AI", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Forex AI Multi-Alert", page_icon="📈", layout="centered")
 
 import numpy as np
 from PIL import Image
@@ -16,25 +16,27 @@ st.markdown("""
     .stSelectbox > div > div { background-color: #1e293b !important; color: #f1f5f9 !important; border: 1px solid #475569 !important; }
     li[role="option"] { background-color: #1e293b !important; color: #f1f5f9 !important; }
     .stButton > button { background: linear-gradient(135deg, #06b6d4, #3b82f6) !important; color: #ffffff !important; font-weight: bold !important; }
-    .metric-box { background: #1e293b; border: 2px solid #475569; border-radius: 12px; padding: 20px; margin: 8px 0; text-align: center; }
-    .signal-buy { background: linear-gradient(135deg, #059669, #10b981); padding: 25px; border-radius: 16px; text-align: center; margin: 15px 0; }
-    .signal-sell { background: linear-gradient(135deg, #dc2626, #ef4444); padding: 25px; border-radius: 16px; text-align: center; margin: 15px 0; }
-    .tf-box { background: #1e293b; border: 3px solid #64748b; border-radius: 12px; padding: 15px; margin: 5px 0; text-align: center; }
-    .tf-bullish { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
-    .tf-bearish { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-    .price-value { font-size: 24px; font-weight: bold; font-family: monospace; color: #fff !important; }
-    .entry { color: #22d3ee !important; }
-    .tp { color: #4ade80 !important; }
-    .sl { color: #f87171 !important; }
+    .signal-buy { background: linear-gradient(135deg, #059669, #10b981); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-green 2s infinite; }
+    .signal-sell { background: linear-gradient(135deg, #dc2626, #ef4444); padding: 15px; border-radius: 12px; text-align: center; animation: pulse-red 2s infinite; }
+    .signal-wait { background: #1e293b; border: 2px solid #475569; padding: 15px; border-radius: 12px; text-align: center; opacity: 0.7; }
+    @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); } }
+    @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } }
+    .alert-banner { background: linear-gradient(90deg, #f59e0b, #d97706); color: white; padding: 15px; border-radius: 12px; text-align: center; margin: 10px 0; animation: blink 1s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+    .pair-card { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 15px; margin: 10px 0; }
+    .pair-card:hover { border-color: #06b6d4; }
+    .level-box { background: #0f172a; border: 2px solid #475569; border-radius: 8px; padding: 10px; text-align: center; }
+    .level-entry { border-color: #06b6d4; }
+    .level-tp { border-color: #10b981; }
+    .level-sl { border-color: #ef4444; }
+    .level-label { font-size: 10px; text-transform: uppercase; opacity: 0.7; }
+    .level-value { font-size: 16px; font-weight: bold; font-family: monospace; }
     .info-box { background: #1e3a5f; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 0 8px 8px 0; margin: 10px 0; }
-    .level-box { background: #1e293b; border: 2px solid #475569; border-radius: 12px; padding: 15px; text-align: center; margin: 5px 0; }
-    .level-entry { border-color: #06b6d4; background: rgba(6, 182, 212, 0.1); }
-    .level-tp { border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
-    .level-sl { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-    .level-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; margin-bottom: 5px; }
-    .level-value { font-size: 20px; font-weight: bold; font-family: monospace; }
 </style>
 """, unsafe_allow_html=True)
+
+# Auto-refresh ogni 30 secondi
+st.markdown("""<meta http-equiv="refresh" content="30">""", unsafe_allow_html=True)
 
 # API Keys
 try:
@@ -42,21 +44,28 @@ try:
 except:
     TWELVE_DATA_KEY = ""
 
+# Session state
+if 'prices' not in st.session_state:
+    st.session_state['prices'] = {}
+if 'signals' not in st.session_state:
+    st.session_state['signals'] = {}
+if 'alerted' not in st.session_state:
+    st.session_state['alerted'] = set()
+
+PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"]
+
 # ============================================================================
 # FUNZIONI
 # ============================================================================
 
 @st.cache_data(ttl=10)
 def get_price(symbol):
-    """Prezzo da Twelve Data per qualsiasi coppia"""
     if not TWELVE_DATA_KEY:
         return None, "No API Key"
-    
     try:
         url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
         response = requests.get(url, timeout=3)
         data = response.json()
-        
         if "price" in data:
             return float(data["price"]), "Twelve Data"
         return None, data.get('message', 'Error')
@@ -64,299 +73,248 @@ def get_price(symbol):
         return None, str(e)
 
 def fetch_data(pair):
-    """Dati storici per qualsiasi coppia"""
     try:
         import yfinance as yf
-        
         yf_symbols = {
-            "EUR/USD": "EURUSD=X",
-            "GBP/USD": "GBPUSD=X", 
-            "USD/JPY": "USDJPY=X",
-            "AUD/USD": "AUDUSD=X"
+            "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", 
+            "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X"
         }
         symbol = yf_symbols.get(pair, "EURUSD=X")
-        
         data = yf.download(symbol, period="30d", interval="1h", progress=False)
-        
         if data.empty:
             return None
-            
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
-        
         data = data.rename(columns=str.lower)
-        
-        column_mapping = {
-            'open': 'open',
-            'high': 'high', 
-            'low': 'low',
-            'close': 'close',
-            'adj close': 'close',
-            'adj_close': 'close',
-            'volume': 'volume'
-        }
-        
-        cols_to_use = ['open', 'high', 'low', 'close']
+        mapping = {'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'adj close': 'close', 'adj_close': 'close'}
         result = pd.DataFrame()
-        
-        for col in cols_to_use:
-            for orig, mapped in column_mapping.items():
+        for col in ['open', 'high', 'low', 'close']:
+            for orig, mapped in mapping.items():
                 if mapped == col and orig in data.columns:
                     result[col] = data[orig]
                     break
-        
-        if len(result.columns) == 4:
-            return result
-            
-    except Exception as e:
-        st.error(f"Errore dati: {e}")
-        
-    return None
+        return result if len(result.columns) == 4 else None
+    except:
+        return None
 
 def calculate_indicators(df):
-    """Indicatori tecnici"""
     if df is None or len(df) < 20:
         return None
-    
     for col in ['open', 'high', 'low', 'close']:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    
     df = df.dropna()
-    
     if len(df) < 20:
         return None
-    
     df['sma20'] = df['close'].rolling(20).mean()
     df['sma50'] = df['close'].rolling(50).mean()
-    
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
-    
-    hl = df['high'] - df['low']
-    df['atr'] = hl.rolling(14).mean()
-    
+    df['rsi'] = 100 - (100 / (1 + (gain / loss)))
+    df['atr'] = (df['high'] - df['low']).rolling(14).mean()
     last = df.iloc[-1]
-    
     score = 50
     if last['close'] > last['sma20']: score += 15
     if last['close'] > last['sma50']: score += 15
     if last['rsi'] > 50: score += 10
     if last['rsi'] > 70: score -= 10
     if last['rsi'] < 30: score += 10
-    
     trend = "BULLISH" if score > 65 else "BEARISH" if score < 35 else "NEUTRAL"
-    
     return {
-        'trend': trend,
-        'strength': max(30, min(95, score)),
+        'trend': trend, 'strength': max(30, min(95, score)),
         'rsi': round(float(last['rsi']), 1),
-        'atr_pips': round(float(last['atr']) * 10000, 1),
-        'close': round(float(last['close']), 5)
+        'atr_pips': round(float(last['atr']) * 10000, 1)
     }
 
 def find_levels(df):
-    """Livelli chiave"""
     if df is None or len(df) < 20:
         return None
-    
-    df['high'] = pd.to_numeric(df['high'], errors='coerce')
-    df['low'] = pd.to_numeric(df['low'], errors='coerce')
-    df = df.dropna()
-    
     recent = df.tail(120)
     if len(recent) < 3:
         return None
-        
     highs = recent['high'].nlargest(3)
     lows = recent['low'].nsmallest(3)
-    
     return {
         'resistance_1': round(float(highs.iloc[0]), 5),
-        'support_1': round(float(lows.iloc[0]), 5),
-        'range': round(float(highs.iloc[0] - lows.iloc[0]), 5)
+        'support_1': round(float(lows.iloc[0]), 5)
+    }
+
+def analyze_pair(pair):
+    """Analizza una coppia e ritorna il segnale completo"""
+    price, source = get_price(pair)
+    if not price:
+        return None
+    
+    data = fetch_data(pair)
+    if data is None:
+        return None
+    
+    ind = calculate_indicators(data)
+    levels = find_levels(data)
+    
+    if not ind or not levels:
+        return None
+    
+    dist_res = (levels['resistance_1'] - price) * 10000
+    dist_sup = (price - levels['support_1']) * 10000
+    
+    if ind['trend'] == "BULLISH" and dist_sup < 20:
+        signal, direction = "BUY", "BUY"
+        entry = price
+        sl = max(levels['support_1'], price - 0.0020)
+        tp = min(levels['resistance_1'], price + 0.0040)
+    elif ind['trend'] == "BEARISH" and dist_res < 20:
+        signal, direction = "SELL", "SELL"
+        entry = price
+        sl = min(levels['resistance_1'], price + 0.0020)
+        tp = max(levels['support_1'], price - 0.0040)
+    else:
+        signal, direction = "ATTENDI", "NEUTRAL"
+        entry = sl = tp = price
+    
+    return {
+        'pair': pair, 'price': price, 'source': source,
+        'signal': signal, 'direction': direction,
+        'entry': entry, 'tp': tp, 'sl': sl,
+        'trend': ind['trend'], 'rsi': ind['rsi'],
+        'strength': ind['strength'], 'atr': ind['atr_pips'],
+        'resistance': levels['resistance_1'], 'support': levels['support_1'],
+        'dist_res': dist_res, 'dist_sup': dist_sup
     }
 
 # ============================================================================
 # UI
 # ============================================================================
 
-st.title("📈 Forex AI")
+st.title("📈 Forex AI - Multi Alert")
 
-if 'prices' not in st.session_state:
-    st.session_state['prices'] = {}
-if 'sources' not in st.session_state:
-    st.session_state['sources'] = {}
-if 'times' not in st.session_state:
-    st.session_state['times'] = {}
+# Toggle auto-analisi
+auto_check = st.checkbox("🔔 Scansione automatica tutte le coppie (30s)", value=True)
 
-pair = st.selectbox("💱 Coppia", ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"], index=0)
+# Pulsante scansione manuale
+if st.button("🚀 SCANSIONA TUTTE LE COPPIE", type="primary", use_container_width=True) or auto_check:
+    
+    active_signals = []
+    
+    with st.spinner("📡 Analisi in corso..."):
+        for pair in PAIRS:
+            result = analyze_pair(pair)
+            if result:
+                st.session_state['prices'][pair] = result['price']
+                st.session_state['signals'][pair] = result
+                if result['direction'] != "NEUTRAL":
+                    active_signals.append(result)
+    
+    # ALERT se ci sono segnali attivi
+    if active_signals:
+        st.markdown(f"""
+            <div class="alert-banner">
+                <h2>🚨 {len(active_signals)} SEGNALE/I ATTIVO/I!</h2>
+                <p>{', '.join([s['pair'] + ' ' + s['signal'] for s in active_signals])}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Suono alert (solo primo rilevamento)
+        new_signals = [s for s in active_signals if s['pair'] not in st.session_state['alerted']]
+        if new_signals:
+            st.session_state['alerted'].update([s['pair'] for s in new_signals])
+            st.markdown("""
+                <audio autoplay>
+                    <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE" type="audio/wav">
+                </audio>
+            """, unsafe_allow_html=True)
+    else:
+        st.session_state['alerted'] = set()  # Reset quando non ci sono segnali
+    
+    # Display tutte le coppie in griglia
+    st.subheader("📊 Stato Coppie")
+    
+    cols = st.columns(2)
+    for idx, pair in enumerate(PAIRS):
+        with cols[idx % 2]:
+            if pair in st.session_state['signals']:
+                s = st.session_state['signals'][pair]
+                
+                # Card colore in base al segnale
+                if s['direction'] == "BUY":
+                    card_class = "signal-buy"
+                    icon = "🟢"
+                elif s['direction'] == "SELL":
+                    card_class = "signal-sell"
+                    icon = "🔴"
+                else:
+                    card_class = "signal-wait"
+                    icon = "⚪"
+                
+                with st.container():
+                    st.markdown(f'<div class="pair-card">', unsafe_allow_html=True)
+                    
+                    # Header
+                    st.markdown(f"""
+                        <div class="{card_class}">
+                            <h3>{icon} {pair}</h3>
+                            <p style="font-size: 24px; font-weight: bold; margin: 0;">{s['price']:.5f}</p>
+                            <p style="margin: 5px 0;">{s['signal']} | {s['trend']} | RSI {s['rsi']}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Livelli (sempre visibili)
+                    if s['direction'] != "NEUTRAL":
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.markdown(f"""
+                                <div class="level-box level-entry">
+                                    <div class="level-label">Entry</div>
+                                    <div class="level-value" style="color: #22d3ee;">{s['entry']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(f"""
+                                <div class="level-box level-tp">
+                                    <div class="level-label">TP</div>
+                                    <div class="level-value" style="color: #4ade80;">{s['tp']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        with c3:
+                            st.markdown(f"""
+                                <div class="level-box level-sl">
+                                    <div class="level-label">SL</div>
+                                    <div class="level-value" style="color: #f87171;">{s['sl']:.5f}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # R:R e pulsante copia
+                        rr = abs(s['tp'] - s['entry']) / abs(s['sl'] - s['entry']) if abs(s['sl'] - s['entry']) > 0 else 0
+                        st.markdown(f"<p style='text-align: center;'>R:R 1:{rr:.1f}</p>", unsafe_allow_html=True)
+                        
+                        txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
+{s['signal']} @ {s['entry']:.5f}
+TP: {s['tp']:.5f} | SL: {s['sl']:.5f}
+R:R 1:{rr:.1f}"""
+                        st.code(txt, language=None)
+                    else:
+                        # Info per coppie neutre
+                        st.markdown(f"""
+                            <p style="text-align: center; font-size: 12px; opacity: 0.7;">
+                                Dist. Res: {s['dist_res']:.1f} pip | Dist. Sup: {s['dist_sup']:.1f} pip
+                            </p>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-col1, col2 = st.columns([2, 1])
+# Dettaglio singola coppia
+st.markdown("---")
+st.subheader("🔍 Dettaglio Coppia")
+selected = st.selectbox("Seleziona per analisi completa", PAIRS)
 
-with col1:
-    if st.button("🔄 Aggiorna Prezzo", use_container_width=True):
-        with st.spinner("📡 Recupero..."):
-            price, source = get_price(pair)
-            
-            if price:
-                st.session_state['prices'][pair] = price
-                st.session_state['sources'][pair] = source
-                st.session_state['times'][pair] = datetime.now()
-                st.success(f"✅ Prezzo aggiornato: {price:.5f}")
-            else:
-                st.error(f"❌ Errore: {source}")
-
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    if pair in st.session_state['prices'] and st.session_state['prices'][pair] > 0:
-        age = int((datetime.now() - st.session_state['times'][pair]).total_seconds()) if pair in st.session_state['times'] else 999
-        color = "🟢" if age < 60 else "🟡" if age < 300 else "🔴"
-        st.markdown(f'{color} <span style="font-size: 12px;">{st.session_state["sources"].get(pair, "")}</span>', unsafe_allow_html=True)
-
-if pair in st.session_state['prices'] and st.session_state['prices'][pair] > 0:
-    current_price = st.session_state['prices'][pair]
-    update_time = st.session_state['times'].get(pair)
+if selected in st.session_state['signals']:
+    s = st.session_state['signals'][selected]
     st.markdown(f"""
         <div class="info-box">
-            <h3>💰 {pair}: {current_price:.5f}</h3>
-            <p>Sorgente: {st.session_state['sources'].get(pair, 'N/A')} | Aggiornato: {update_time.strftime('%H:%M:%S') if update_time else 'N/A'}</p>
+            <h3>{selected} | {s['signal']} | Forza: {s['strength']}%</h3>
+            <p>Resistenza: {s['resistance']:.5f} | Supporto: {s['support']:.5f} | ATR: {s['atr']} pip</p>
         </div>
     """, unsafe_allow_html=True)
-else:
-    st.info("⏳ Clicca 'Aggiorna Prezzo' per iniziare")
-
-uploaded = st.file_uploader("📸 Screenshot (opzionale)", type=["png", "jpg", "jpeg"])
 
 st.markdown("---")
-
-# ============================================================================
-# ANALISI
-# ============================================================================
-
-if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
-    
-    if pair not in st.session_state['prices'] or st.session_state['prices'][pair] <= 0:
-        st.error("❌ Clicca prima 'Aggiorna Prezzo'!")
-        st.stop()
-    
-    current_price = st.session_state['prices'][pair]
-    
-    with st.spinner(f"📡 Analisi tecnica {pair}..."):
-        data = fetch_data(pair)
-        
-        if data is not None:
-            st.write(f"📊 Dati caricati: {len(data)} righe, colonne: {list(data.columns)}")
-        else:
-            st.error("❌ Impossibile caricare dati storici")
-            st.stop()
-            
-        ind = calculate_indicators(data)
-        levels = find_levels(data)
-    
-    if levels:
-        st.subheader("🏗️ Livelli Chiave")
-        
-        cols = st.columns(3)
-        with cols[0]:
-            st.metric("Resistenza", f"{levels['resistance_1']:.5f}")
-        with cols[1]:
-            st.metric("Prezzo Attuale", f"{current_price:.5f}")
-        with cols[2]:
-            st.metric("Supporto", f"{levels['support_1']:.5f}")
-    
-    if uploaded:
-        st.image(uploaded, use_column_width=True)
-    
-    if ind:
-        st.subheader("📊 Indicatori")
-        
-        cols = st.columns(4)
-        with cols[0]:
-            icon = "🟢" if ind['trend'] == "BULLISH" else "🔴" if ind['trend'] == "BEARISH" else "⚪"
-            st.metric("Trend", f"{icon} {ind['trend']}")
-        with cols[1]:
-            st.metric("RSI", ind['rsi'])
-        with cols[2]:
-            st.metric("Forza", f"{ind['strength']}%")
-        with cols[3]:
-            st.metric("ATR", f"{ind['atr_pips']} pip")
-        
-        # Calcolo segnale
-        dist_res = (levels['resistance_1'] - current_price) * 10000 if levels else 0
-        dist_sup = (current_price - levels['support_1']) * 10000 if levels else 0
-        
-        if ind['trend'] == "BULLISH" and dist_sup < 20:
-            signal, direction = "BUY", "BUY"
-            entry = current_price
-            sl = max(levels['support_1'], current_price - 0.0020) if levels else current_price - 0.0020
-            tp = min(levels['resistance_1'], current_price + 0.0040) if levels else current_price + 0.0040
-        elif ind['trend'] == "BEARISH" and dist_res < 20:
-            signal, direction = "SELL", "SELL"
-            entry = current_price
-            sl = min(levels['resistance_1'], current_price + 0.0020) if levels else current_price + 0.0020
-            tp = max(levels['support_1'], current_price - 0.0040) if levels else current_price - 0.0040
-        else:
-            signal, direction = "ATTENDI", "NEUTRAL"
-            entry = sl = tp = current_price
-        
-        # LIVELLI OPERATIVI - SEMPRE VISIBILI
-        st.subheader("🎯 Livelli Operativi")
-        
-        cols_levels = st.columns(3)
-        with cols_levels[0]:
-            st.markdown(f"""
-                <div class="level-box level-entry">
-                    <div class="level-label">🚀 Entry Point</div>
-                    <div class="level-value" style="color: #22d3ee;">{entry:.5f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with cols_levels[1]:
-            st.markdown(f"""
-                <div class="level-box level-tp">
-                    <div class="level-label">🎯 Take Profit</div>
-                    <div class="level-value" style="color: #4ade80;">{tp:.5f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with cols_levels[2]:
-            st.markdown(f"""
-                <div class="level-box level-sl">
-                    <div class="level-label">🛡️ Stop Loss</div>
-                    <div class="level-value" style="color: #f87171;">{sl:.5f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        # Box segnale (solo se c'è direzione)
-        if direction != "NEUTRAL":
-            box_class = "signal-buy" if direction == "BUY" else "signal-sell"
-            icon = "🟢" if direction == "BUY" else "🔴"
-            rr = abs(tp - entry) / abs(sl - entry) if abs(sl - entry) > 0 else 0
-            
-            st.markdown(f"""
-                <div class="{box_class}">
-                    <h2>{icon} {signal}</h2>
-                    <p style="font-size: 18px; margin: 10px 0;">Risk/Reward Ratio: <strong>1:{rr:.1f}</strong></p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Share
-            st.markdown("---")
-            base = pair.replace("/", "")
-            txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
-{signal}
-Entry: {entry:.5f}
-TP: {tp:.5f} | SL: {sl:.5f}
-R:R 1:{rr:.1f}
-#Forex #{base}"""
-            st.code(txt)
-            if st.button("📋 Copia"): 
-                st.success("✅ Copiato!")
-        else:
-            st.warning("⏳ Attendi che il prezzo si avvicini a supporto/resistenza")
-
-st.markdown("---")
-st.caption(f"⏰ {datetime.now().strftime('%H:%M')} | {pair}")
+st.caption(f"⏰ {datetime.now().strftime('%H:%M:%S')} | Ultimo aggiornamento")
