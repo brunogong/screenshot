@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="Forex AI - EUR/USD", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Forex AI", page_icon="📈", layout="centered")
 
 import numpy as np
 from PIL import Image
@@ -8,7 +8,7 @@ from datetime import datetime
 import requests
 import pandas as pd
 
-# CSS
+# CSS (invariato)
 st.markdown("""
 <style>
     .stApp { background: #0f172a; }
@@ -40,14 +40,15 @@ except:
 # FUNZIONI
 # ============================================================================
 
+# FIX: Aggiunto parametro symbol per supportare qualsiasi coppia
 @st.cache_data(ttl=10)
-def get_price_eurusd():
-    """Prezzo EUR/USD da Twelve Data"""
+def get_price(symbol):
+    """Prezzo da Twelve Data per qualsiasi coppia"""
     if not TWELVE_DATA_KEY:
         return None, "No API Key"
     
     try:
-        url = f"https://api.twelvedata.com/price?symbol=EUR/USD&apikey={TWELVE_DATA_KEY}"
+        url = f"https://api.twelvedata.com/price?symbol={symbol}&apikey={TWELVE_DATA_KEY}"
         response = requests.get(url, timeout=3)
         data = response.json()
         
@@ -57,20 +58,29 @@ def get_price_eurusd():
     except Exception as e:
         return None, str(e)
 
-def fetch_eurusd_data():
-    """Dati storici EUR/USD"""
+# FIX: Aggiunto parametro pair per supportare qualsiasi coppia
+def fetch_data(pair):
+    """Dati storici per qualsiasi coppia"""
     try:
         import yfinance as yf
-        data = yf.download("EURUSD=X", period="30d", interval="1h", progress=False)
+        # Mappa le coppie nel formato yfinance
+        yf_symbols = {
+            "EUR/USD": "EURUSD=X",
+            "GBP/USD": "GBPUSD=X", 
+            "USD/JPY": "USDJPY=X",
+            "AUD/USD": "AUDUSD=X"
+        }
+        symbol = yf_symbols.get(pair, "EURUSD=X")
+        data = yf.download(symbol, period="30d", interval="1h", progress=False)
         if not data.empty:
             data.columns = ['open', 'high', 'low', 'close', 'adj_close', 'volume']
             return data[['open', 'high', 'low', 'close']]
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Errore dati: {e}")
     return None
 
 def calculate_indicators(df):
-    """Indicatori per EUR/USD"""
+    """Indicatori tecnici"""
     if df is None or len(df) < 20:
         return None
     
@@ -123,16 +133,22 @@ def find_levels(df):
 # UI
 # ============================================================================
 
-st.title("📈 Forex AI - EUR/USD")
-st.markdown("**Bassa volatilità, prezzo quasi reale**")
+st.title("📈 Forex AI")
 
-# Inizializza session state
-if 'price' not in st.session_state:
-    st.session_state['price'] = 0.0
-    st.session_state['source'] = ""
-    st.session_state['time'] = None
+# FIX: Inizializza session state con chiave dinamica per coppia
+if 'prices' not in st.session_state:
+    st.session_state['prices'] = {}
+if 'sources' not in st.session_state:
+    st.session_state['sources'] = {}
+if 'times' not in st.session_state:
+    st.session_state['times'] = {}
 
 pair = st.selectbox("💱 Coppia", ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"], index=0)
+
+# FIX: Resetta il prezzo quando cambia la coppia (usando callback)
+def on_pair_change():
+    # Non serve fare nulla di speciale, il prezzo verrà letto dalla chiave corretta
+    pass
 
 # Recupero prezzo
 col1, col2 = st.columns([2, 1])
@@ -140,29 +156,32 @@ col1, col2 = st.columns([2, 1])
 with col1:
     if st.button("🔄 Aggiorna Prezzo", use_container_width=True):
         with st.spinner("📡 Recupero..."):
-            price, source = get_price_eurusd()
+            # FIX: Usa la funzione generica con il simbolo corretto
+            price, source = get_price(pair)
             
             if price:
-                st.session_state['price'] = price
-                st.session_state['source'] = source
-                st.session_state['time'] = datetime.now()
+                st.session_state['prices'][pair] = price
+                st.session_state['sources'][pair] = source
+                st.session_state['times'][pair] = datetime.now()
                 st.success(f"✅ Prezzo aggiornato: {price:.5f}")
             else:
                 st.error(f"❌ Errore: {source}")
 
 with col2:
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.session_state['price'] > 0:
-        age = int((datetime.now() - st.session_state['time']).total_seconds()) if st.session_state['time'] else 999
+    if pair in st.session_state['prices'] and st.session_state['prices'][pair] > 0:
+        age = int((datetime.now() - st.session_state['times'][pair]).total_seconds()) if pair in st.session_state['times'] else 999
         color = "🟢" if age < 60 else "🟡" if age < 300 else "🔴"
-        st.markdown(f'{color} <span style="font-size: 12px;">{st.session_state["source"]}</span>', unsafe_allow_html=True)
+        st.markdown(f'{color} <span style="font-size: 12px;">{st.session_state["sources"].get(pair, "")}</span>', unsafe_allow_html=True)
 
 # Display prezzo
-if st.session_state['price'] > 0:
+if pair in st.session_state['prices'] and st.session_state['prices'][pair] > 0:
+    current_price = st.session_state['prices'][pair]
+    update_time = st.session_state['times'].get(pair)
     st.markdown(f"""
         <div class="info-box">
-            <h3>💰 EUR/USD: {st.session_state['price']:.5f}</h3>
-            <p>Sorgente: {st.session_state['source']} | Aggiornato: {st.session_state['time'].strftime('%H:%M:%S') if st.session_state['time'] else 'N/A'}</p>
+            <h3>💰 {pair}: {current_price:.5f}</h3>
+            <p>Sorgente: {st.session_state['sources'].get(pair, 'N/A')} | Aggiornato: {update_time.strftime('%H:%M:%S') if update_time else 'N/A'}</p>
         </div>
     """, unsafe_allow_html=True)
 else:
@@ -173,20 +192,21 @@ uploaded = st.file_uploader("📸 Screenshot (opzionale)", type=["png", "jpg", "
 st.markdown("---")
 
 # ============================================================================
-# ANALISI - FIX: usa sempre st.session_state['price']
+# ANALISI
 # ============================================================================
 
-if st.button("🚀 ANALISI EUR/USD", type="primary", use_container_width=True):
+if st.button("🚀 ANALISI TECNICA", type="primary", use_container_width=True):
     
-    # FIX: controlla session_state, non variabile locale
-    if st.session_state['price'] <= 0:
+    # FIX: Controlla il prezzo della coppia selezionata
+    if pair not in st.session_state['prices'] or st.session_state['prices'][pair] <= 0:
         st.error("❌ Clicca prima 'Aggiorna Prezzo'!")
         st.stop()
     
-    current_price = st.session_state['price']  # <-- FIX: prendi da session_state
+    current_price = st.session_state['prices'][pair]
     
-    with st.spinner("📡 Analisi tecnica..."):
-        data = fetch_eurusd_data()
+    with st.spinner(f"📡 Analisi tecnica {pair}..."):
+        # FIX: Passa la coppia selezionata alla funzione
+        data = fetch_data(pair)
         ind = calculate_indicators(data)
         levels = find_levels(data)
     
@@ -254,12 +274,13 @@ if st.button("🚀 ANALISI EUR/USD", type="primary", use_container_width=True):
             
             # Share
             st.markdown("---")
-            txt = f"""🎯 EUR/USD - {datetime.now().strftime('%H:%M')}
+            base = pair.replace("/", "")
+            txt = f"""🎯 {pair} - {datetime.now().strftime('%H:%M')}
 {signal}
 Entry: {entry:.5f}
 TP: {tp:.5f} | SL: {sl:.5f}
 R:R 1:{rr:.1f}
-#Forex #EURUSD"""
+#Forex #{base}"""
             st.code(txt)
             if st.button("📋 Copia"): 
                 st.success("✅ Copiato!")
@@ -267,4 +288,4 @@ R:R 1:{rr:.1f}
             st.warning("⏳ Attendi che il prezzo si avvicini a supporto/resistenza")
 
 st.markdown("---")
-st.caption(f"⏰ {datetime.now().strftime('%H:%M')} | EUR/USD Edition")
+st.caption(f"⏰ {datetime.now().strftime('%H:%M')} | {pair}")
